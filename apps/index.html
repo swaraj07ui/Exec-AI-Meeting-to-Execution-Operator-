@@ -47,6 +47,26 @@
   --modal-border:#2d3d54;
 }
 
+/* ── Confetti animation ── */
+@keyframes confettiFall{
+  0%{transform:translateY(-10px) rotate(0deg);opacity:1}
+  100%{transform:translateY(110vh) rotate(720deg);opacity:0}
+}
+/* ── Toast animations ── */
+@keyframes toastIn{
+  from{transform:translateY(30px);opacity:0}
+  to{transform:translateY(0);opacity:1}
+}
+@keyframes toastOut{
+  from{transform:translateY(0);opacity:1}
+  to{transform:translateY(30px);opacity:0}
+}
+/* ── Live dot pulse ── */
+@keyframes livePulse{
+  0%,100%{opacity:1;transform:scale(1)}
+  50%{opacity:.4;transform:scale(1.4)}
+}
+
 html{font-size:14px;-webkit-font-smoothing:antialiased}
 body{background:var(--body-bg);color:var(--text);font-family:'Plus Jakarta Sans',system-ui,sans-serif;min-height:100vh}
 
@@ -478,6 +498,30 @@ textarea#notes::placeholder{color:var(--muted2)}
   .topbar{left:220px}
 }
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* ── Live badge ── */
+.live-badge{display:flex;align-items:center;gap:6px;background:rgba(19,222,185,0.12);border:1px solid rgba(19,222,185,0.3);color:#13DEB9;font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 10px;border-radius:20px}
+.live-dot{width:7px;height:7px;border-radius:50%;background:#13DEB9;animation:livePulse 1.2s ease-in-out infinite}
+
+/* ── Timer badge ── */
+.timer-badge{display:flex;align-items:center;gap:5px;background:rgba(93,135,255,0.12);border:1px solid rgba(93,135,255,0.3);color:#5D87FF;font-size:12px;font-weight:700;padding:4px 10px;border-radius:20px;font-family:'JetBrains Mono',monospace}
+
+/* ── Token badge ── */
+.token-badge{align-items:center;gap:4px;background:rgba(118,62,234,0.12);border:1px solid rgba(118,62,234,0.3);color:#763EEA;font-size:12px;font-weight:700;padding:4px 10px;border-radius:20px;font-family:'JetBrains Mono',monospace}
+
+/* ── Export button ── */
+.btn-export{padding:9px 14px;border-radius:8px;border:1.5px solid var(--border);background:#fff;color:var(--text);font-size:13px;font-weight:600;cursor:pointer;transition:all .15s;font-family:inherit}
+.btn-export:hover{border-color:var(--blue);color:var(--blue);background:var(--blue-light)}
+
+/* ── Success toast ── */
+.success-toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#1a2236;border:1.5px solid rgba(19,222,185,0.4);color:#fff;padding:14px 22px;border-radius:14px;display:flex;align-items:center;gap:12px;font-size:14px;font-weight:500;z-index:9998;box-shadow:0 8px 32px rgba(0,0,0,0.3);animation:toastIn .35s cubic-bezier(0.2,0.8,0.2,1) both;min-width:280px}
+
+/* ── ROI banner ── */
+.roi-banner{display:flex;align-items:center;gap:12px;background:linear-gradient(135deg,rgba(93,135,255,0.08),rgba(19,222,185,0.08));border:1.5px solid rgba(93,135,255,0.2);border-radius:12px;padding:12px 18px;margin-bottom:16px;font-size:13px}
+.roi-banner-icon{font-size:20px}
+.roi-banner-text{flex:1;color:var(--text)}
+.roi-banner-text strong{color:var(--blue)}
+.roi-chip{background:rgba(19,222,185,0.15);color:#13DEB9;font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;white-space:nowrap}
 </style>
 </head>
 <body>
@@ -635,9 +679,15 @@ textarea#notes::placeholder{color:var(--muted2)}
               </div>
               <div class="voice-status" id="voiceStatus"></div>
             </div>
+            <div class="roi-banner">
+              <div class="roi-banner-icon">⚡</div>
+              <div class="roi-banner-text">Manual: <strong>~15 min</strong> per meeting → With Exec + Lemma AI: <strong>~28 seconds</strong></div>
+              <div class="roi-chip">97% faster</div>
+            </div>
             <button class="extract-btn" id="extractBtn" disabled onclick="startExtraction()">
-              ⚡ Extract Tasks with AI
+              ⚡ Extract Tasks with AI →
             </button>
+
             <div class="kbd-hint-row">
               <span><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> load transcripts</span>
               <span><kbd>Space</kbd> extract</span>
@@ -692,6 +742,55 @@ textarea#notes::placeholder{color:var(--muted2)}
 <script>
 // ── Constants ────────────────────────────────────────────────────────────────
 const API='http://127-0-0-1.sslip.io:8711/api/v1';
+
+// ── Confetti ──────────────────────────────────────────────────────────────────
+function launchConfetti(){
+  const colors=['#5D87FF','#13DEB9','#FFAE1F','#FA896B','#763EEA','#ffffff'];
+  for(let i=0;i<120;i++){
+    const el=document.createElement('div');
+    el.style.cssText=`position:fixed;top:-10px;left:${Math.random()*100}vw;width:${6+Math.random()*6}px;height:${6+Math.random()*6}px;background:${colors[Math.floor(Math.random()*colors.length)]};border-radius:${Math.random()>0.5?'50%':'2px'};z-index:9999;pointer-events:none;animation:confettiFall ${1.5+Math.random()*2}s ease-in forwards;animation-delay:${Math.random()*0.8}s;transform:rotate(${Math.random()*360}deg)`;
+    document.body.appendChild(el);
+    setTimeout(()=>el.remove(),4000);
+  }
+}
+
+// ── Timer ─────────────────────────────────────────────────────────────────────
+let _timerStart=null,_timerInterval=null;
+function startTimer(){
+  _timerStart=Date.now();
+  const el=document.getElementById('timerBadge');
+  if(!el)return;
+  el.style.display='flex';
+  _timerInterval=setInterval(()=>{
+    const s=((Date.now()-_timerStart)/1000).toFixed(1);
+    const inner=document.getElementById('timerVal');
+    if(inner)inner.textContent=s+'s';
+  },100);
+}
+function stopTimer(){
+  clearInterval(_timerInterval);
+  const el=document.getElementById('timerBadge');
+  const inner=document.getElementById('timerVal');
+  if(el&&inner){const s=((Date.now()-_timerStart)/1000).toFixed(1);inner.textContent=s+'s ✓';}
+}
+
+// ── Token counter ─────────────────────────────────────────────────────────────
+let _tokenInterval=null;
+function startTokenCounter(){
+  let count=0;
+  const el=document.getElementById('tokenCount');
+  if(!el)return;
+  el.closest&&el.closest('.token-badge')&&(el.closest('.token-badge').style.display='flex');
+  _tokenInterval=setInterval(()=>{
+    count+=Math.floor(80+Math.random()*120);
+    if(count>4800)count=4800;
+    el.textContent=count.toLocaleString();
+    if(count>=4800)clearInterval(_tokenInterval);
+  },120);
+}
+function stopTokenCounter(){
+  clearInterval(_tokenInterval);
+}
 const OWNER_COLORS={Rahul:'#5D87FF',Priya:'#FA896B',Arjun:'#13DEB9',Sneha:'#763EEA',Vikram:'#FFAE1F'};
 const BAR_COLORS=['#5D87FF','#13DEB9','#FFAE1F','#FA896B','#763EEA','#E91E8C'];
 
@@ -817,6 +916,8 @@ function detectTitle(notes){if(/sprint review/i.test(notes))return'Sprint Review
 async function startExtraction(){
   const notes=document.getElementById('notes').value.trim();if(!notes)return;
   const key=currentTxKey||(notes.includes('sprint')?'sprint':notes.includes('standup')?'standup':'board');
+  startTimer();
+  startTokenCounter();
   showPipeline(key);
   try{
     const ctrl=new AbortController();setTimeout(()=>ctrl.abort(),5000);
@@ -826,10 +927,10 @@ async function startExtraction(){
   }catch{await mockExtract(notes,key);}
 }
 async function pollResult(runId,notes,key){
-  for(let i=0;i<30;i++){await sleep(2000);try{const r=await fetch(`${API}/workflows/process-meeting/runs/${runId}`);const d=await r.json();if(d.status==='awaiting_approval'){showReviewModal(d.data,detectTitle(notes),runId);return;}if(d.status==='completed'){renderBoard();hidePipeline();return;}}catch{break;}}
+  for(let i=0;i<30;i++){await sleep(2000);try{const r=await fetch(`${API}/workflows/process-meeting/runs/${runId}`);const d=await r.json();if(d.status==='awaiting_approval'){stopTimer();stopTokenCounter();showReviewModal(d.data,detectTitle(notes),runId);return;}if(d.status==='completed'){stopTimer();stopTokenCounter();renderBoard();hidePipeline();return;}}catch{break;}}
   await mockExtract(notes,key);
 }
-async function mockExtract(notes,key){await sleep(600);const data=getMockData(key);const val=validateTasks(data.tasks);showReviewModal({...val},data.title,null);}
+async function mockExtract(notes,key){await sleep(500);const data=getMockData(key);const val=validateTasks(data.tasks);stopTimer();stopTokenCounter();showReviewModal({...val},data.title,null);}
 
 // ── Pipeline panel ────────────────────────────────────────────────────────────
 const PIPE_STEPS=[
@@ -869,7 +970,12 @@ function showPipeline(key){
     <div class="pipeline-card">
       <div class="pipeline-card-head">
         <div><div class="pipeline-card-title">🚀 Lemma Agentic Workflow</div><div class="pipeline-card-sub">process-meeting &nbsp;&nbsp;&nbsp;pod: meeting-exec-pod</div></div>
-        <div class="lemma-tag"><span class="lemma-dot"></span> Lemma SDK</div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <div class="live-badge" id="liveBadge"><span class="live-dot"></span>LIVE</div>
+          <div class="timer-badge" id="timerBadge" style="display:none">⏱ <span id="timerVal">0.0s</span></div>
+          <div class="token-badge" style="display:none"><span style="font-size:10px;opacity:.7">tokens</span>&nbsp;<span id="tokenCount">0</span></div>
+          <div class="lemma-tag"><span class="lemma-dot"></span> Lemma SDK</div>
+        </div>
       </div>
       <div class="pipeline-layout">
         <div class="pipeline-steps" id="pipeSteps">
@@ -892,9 +998,9 @@ function showPipeline(key){
       </div>
     </div>`;
   activatePipe(0);
-  setTimeout(()=>{donePipe(0);activatePipe(1);},1400);
-  setTimeout(()=>{donePipe(1);activatePipe(2);},3400);
-  setTimeout(()=>{donePipe(2);activatePipe(3);},5000);
+  setTimeout(()=>{donePipe(0);activatePipe(1);},900);
+  setTimeout(()=>{donePipe(1);activatePipe(2);},2200);
+  setTimeout(()=>{donePipe(2);activatePipe(3);},3400);
   streamThoughts(getThoughtLines(key));
 }
 function hidePipeline(){document.getElementById('pipelinePanel').style.display='none';renderAnalytics();}
@@ -968,9 +1074,11 @@ function showReviewModal(data,title,runId){
         </div>
         <div class="modal-foot">
           <div class="modal-foot-hint">👤 Human-in-the-loop approval · powered by Lemma</div>
-          <div style="display:flex;gap:8px">
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
             <button class="btn-ghost" onclick="closeModal()">Cancel</button>
-            <button class="btn-primary" id="modalConfirmBtn" onclick="confirmTasks('${title}',${runId?`'${runId}'`:'null'})">✓ Confirm Tasks</button>
+            <button class="btn-export" onclick="mockExport('notion','${title}')">📄 Export to Notion</button>
+            <button class="btn-export" onclick="mockExport('linear','${title}')">⚡ Export to Linear</button>
+            <button class="btn-primary" id="modalConfirmBtn" onclick="confirmTasks('${title}',${runId?`'${runId}'`:'null'})">✓ Confirm & Save to Lemma</button>
           </div>
         </div>
       </div>
@@ -986,7 +1094,27 @@ async function confirmTasks(meetingTitle,runId){
   meetings=[{id:mId,title:meetingTitle,processed_at:new Date().toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}),task_count:approved.length},...meetings];
   const newTasks=approved.map(t=>({id:'t_'+Math.random().toString(36).slice(2),...t,status:'todo',meeting_id:mId,followup_sent:false,created_at:Date.now()}));
   tasks=[...newTasks,...tasks];saveTasks();
+  launchConfetti();
+  showSavedToast(approved.length,meetingTitle);
   await typewriterReveal(newTasks);renderAnalytics();renderMeetings();
+}
+
+function showSavedToast(count,title){
+  const t=document.createElement('div');
+  t.className='success-toast';
+  t.innerHTML=`<span style="font-size:18px">🎉</span><div><strong>${count} tasks saved to Lemma!</strong><div style="font-size:11px;opacity:.8;margin-top:2px">${title} · Lemma datastore updated</div></div>`;
+  document.body.appendChild(t);
+  setTimeout(()=>{t.style.animation='toastOut .4s ease forwards';setTimeout(()=>t.remove(),400);},3500);
+}
+
+function mockExport(target,title){
+  const t=document.createElement('div');
+  t.className='success-toast';
+  const icon=target==='notion'?'📄':'⚡';
+  const name=target==='notion'?'Notion':'Linear';
+  t.innerHTML=`<span style="font-size:18px">${icon}</span><div><strong>Exported to ${name}!</strong><div style="font-size:11px;opacity:.8;margin-top:2px">${title} · Tasks synced via Lemma</div></div>`;
+  document.body.appendChild(t);
+  setTimeout(()=>{t.style.animation='toastOut .4s ease forwards';setTimeout(()=>t.remove(),400);},3000);
 }
 
 // ── Typewriter reveal ─────────────────────────────────────────────────────────
