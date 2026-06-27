@@ -530,6 +530,15 @@ textarea#notes::placeholder{color:var(--muted2)}
 .savings-label{font-size:10px;color:#607d9f;text-transform:uppercase;letter-spacing:.5px}
 .savings-val{font-size:14px;font-weight:700;color:#fff;font-family:'JetBrains Mono',monospace}
 
+/* ── Quick-action buttons ── */
+.qa-btn{border:none;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;transition:all .12s}
+.qa-progress{background:rgba(93,135,255,0.12);color:#5D87FF;border:1px solid rgba(93,135,255,0.3)}
+.qa-progress:hover{background:#5D87FF;color:#fff}
+.qa-done{background:rgba(19,222,185,0.12);color:#13DEB9;border:1px solid rgba(19,222,185,0.3)}
+.qa-done:hover{background:#13DEB9;color:#fff}
+.qa-undo{background:rgba(120,144,156,0.12);color:#78909C;border:1px solid rgba(120,144,156,0.3)}
+.qa-undo:hover{background:#78909C;color:#fff}
+
 </style>
 </head>
 <body>
@@ -756,9 +765,20 @@ textarea#notes::placeholder{color:var(--muted2)}
         <div class="card-head">
           <div>
             <div class="card-title">Task Board</div>
-            <div class="card-sub">Drag cards to update status</div>
+            <div class="card-sub">Drag or use quick-actions to update status</div>
           </div>
-          <span class="card-badge green" id="boardBadge">0 tasks</span>
+          <div style="display:flex;align-items:center;gap:8px">
+            <button id="simulateBtn" onclick="simulateSprint()" style="display:none;background:linear-gradient(135deg,#13DEB9,#5D87FF);color:#fff;border:none;padding:7px 14px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">🚀 Simulate Sprint</button>
+            <span class="card-badge green" id="boardBadge">0 tasks</span>
+          </div>
+        </div>
+        <div id="boardProgressWrap" style="display:none;padding:0 18px 12px">
+          <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-bottom:6px">
+            <span>Sprint Progress</span><span id="progressLabel">0% complete</span>
+          </div>
+          <div style="background:#e8eef4;border-radius:20px;height:8px;overflow:hidden">
+            <div id="progressBar" style="height:100%;width:0%;background:linear-gradient(90deg,#5D87FF,#13DEB9);border-radius:20px;transition:width .6s cubic-bezier(0.2,0.8,0.2,1)"></div>
+          </div>
         </div>
         <div style="padding:18px">
           <div class="kanban-grid" id="kanban">
@@ -1257,6 +1277,11 @@ function taskCardHTML(t,i){
   let dl='';
   if(t.deadline&&t.deadline!=='NO_DEADLINE'){const d=new Date(t.deadline+'T00:00:00');const cls=d<today?'overdue':d.getTime()===today.getTime()?'today':'';dl=`<span class="dl-chip ${cls}">📅 ${t.deadline}</span>`;}
   const initials=t.owner&&t.owner!=='UNASSIGNED'?t.owner.slice(0,2).toUpperCase():'?';
+  const quickAction=t.status==='done'
+    ?`<button class="qa-btn qa-undo" onclick="updateStatus('${t.id}','todo')" title="Move back to To Do">↺ Undo</button>`
+    :t.status==='in_progress'
+    ?`<button class="qa-btn qa-done" onclick="updateStatus('${t.id}','done')" title="Mark Done">✓ Done</button>`
+    :`<button class="qa-btn qa-progress" onclick="updateStatus('${t.id}','in_progress')" title="Start working">▶ Start</button>`;
   return`<div class="task-card" style="animation-delay:${i*.07}s" id="tc-${t.id}" draggable="true"
     ondragstart="draggedId='${t.id}';event.currentTarget.classList.add('dragging')"
     ondragend="event.currentTarget.classList.remove('dragging')">
@@ -1274,14 +1299,59 @@ function taskCardHTML(t,i){
         <option value="in_progress"${t.status==='in_progress'?' selected':''}>In Progress</option>
         <option value="done"${t.status==='done'?' selected':''}>Done</option>
       </select>
-      <button class="slack-btn" onclick="showSlack('${t.id}')">
-        <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zm1.271 0a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313zm2.521-10.123a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834zm0 1.271a2.528 2.528 0 0 1 2.521 2.521 2.528 2.528 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312zm10.122 2.521a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.522V8.834zm-1.268 0a2.528 2.528 0 0 1-2.523 2.521 2.527 2.527 0 0 1-2.52-2.521V2.522A2.527 2.527 0 0 1 15.165 0a2.528 2.528 0 0 1 2.523 2.522v6.312zm-2.523 10.122a2.528 2.528 0 0 1 2.523 2.522A2.528 2.528 0 0 1 15.165 24a2.527 2.527 0 0 1-2.52-2.522v-2.522h2.52zm0-1.268a2.527 2.527 0 0 1-2.52-2.523 2.526 2.526 0 0 1 2.52-2.52h6.313A2.527 2.527 0 0 1 24 15.165a2.528 2.528 0 0 1-2.522 2.523h-6.313z"/></svg>
-        Remind
-      </button>
+      <div style="display:flex;gap:6px;align-items:center">
+        ${quickAction}
+        <button class="slack-btn" onclick="showSlack('${t.id}')">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zm1.271 0a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313zm2.521-10.123a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834zm0 1.271a2.528 2.528 0 0 1 2.521 2.521 2.528 2.528 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312zm10.122 2.521a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.522V8.834zm-1.268 0a2.528 2.528 0 0 1-2.523 2.521 2.527 2.527 0 0 1-2.52-2.521V2.522A2.527 2.527 0 0 1 15.165 0a2.528 2.528 0 0 1 2.523 2.522v6.312zm-2.523 10.122a2.528 2.528 0 0 1 2.523 2.522A2.528 2.528 0 0 1 15.165 24a2.527 2.527 0 0 1-2.52-2.522v-2.522h2.52zm0-1.268a2.527 2.527 0 0 1-2.52-2.523 2.526 2.526 0 0 1 2.52-2.52h6.313A2.527 2.527 0 0 1 24 15.165a2.528 2.528 0 0 1-2.522 2.523h-6.313z"/></svg>
+          Remind
+        </button>
+      </div>
     </div>
   </div>`;
 }
-function updateStatus(id,status){const t=tasks.find(x=>x.id===id);if(!t)return;t.status=status;saveTasks();renderBoard();renderAnalytics();try{fetch(`${API}/tables/tasks/${id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status})}).catch(()=>{});}catch{}}
+function updateStatus(id,status){
+  const t=tasks.find(x=>x.id===id);if(!t)return;
+  t.status=status;saveTasks();renderBoard();renderAnalytics();updateProgressBar();
+  playPop();
+  try{fetch(`${API}/tables/tasks/${id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status})}).catch(()=>{});}catch{}
+}
+
+function updateProgressBar(){
+  const total=tasks.length;if(!total)return;
+  const done=tasks.filter(t=>t.status==='done').length;
+  const pct=Math.round(done/total*100);
+  const bar=document.getElementById('progressBar');
+  const lbl=document.getElementById('progressLabel');
+  const wrap=document.getElementById('boardProgressWrap');
+  const simBtn=document.getElementById('simulateBtn');
+  if(wrap)wrap.style.display=total?'':'none';
+  if(simBtn)simBtn.style.display=total?'':'none';
+  if(bar)bar.style.width=pct+'%';
+  if(lbl)lbl.textContent=pct+'% complete';
+  if(pct===100&&total>0){launchConfetti();playSuccess();showSavedToast(done,'Sprint complete 🎉');}
+}
+
+async function simulateSprint(){
+  const todoTasks=tasks.filter(t=>t.status!=='done');
+  if(!todoTasks.length){showSavedToast(0,'All tasks already done!');return;}
+  const btn=document.getElementById('simulateBtn');
+  if(btn)btn.disabled=true;
+  // Phase 1: move all to in_progress
+  for(const t of todoTasks){
+    await sleep(350);t.status='in_progress';
+    saveTasks();renderBoard();updateProgressBar();playPop();
+  }
+  await sleep(800);
+  // Phase 2: move all to done one by one
+  for(const t of todoTasks){
+    await sleep(500);t.status='done';
+    saveTasks();renderBoard();updateProgressBar();
+    if(t===todoTasks[todoTasks.length-1])playSuccess();
+    else playPop();
+  }
+  if(btn){btn.disabled=false;btn.textContent='🔄 Reset Board';btn.onclick=()=>{tasks.forEach(t=>t.status='todo');saveTasks();renderBoard();updateProgressBar();btn.textContent='🚀 Simulate Sprint';btn.onclick=simulateSprint;};
+  }
+}
 
 // ── Slack modal ───────────────────────────────────────────────────────────────
 function showSlack(id){
@@ -1435,7 +1505,7 @@ async function runAutoDemo(){
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
-renderBoard();renderMeetings();renderAnalytics();updateSavingsWidget();
+renderBoard();renderMeetings();renderAnalytics();updateSavingsWidget();updateProgressBar();
 </script>
 </body>
 </html>
