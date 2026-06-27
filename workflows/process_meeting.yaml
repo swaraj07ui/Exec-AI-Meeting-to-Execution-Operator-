@@ -1,0 +1,78 @@
+name: process-meeting
+description: >
+  End-to-end pipeline: transcript → parsed entities → AI extraction →
+  validation → human review → committed task records.
+
+trigger: manual
+
+inputs:
+  notes_text:
+    type: string
+    required: true
+    description: Raw meeting transcript or notes to process
+  meeting_title:
+    type: string
+    required: false
+    default: "Untitled Meeting"
+    description: Human-readable title for the meeting record
+
+steps:
+  - id: parse_entities
+    type: function
+    function: parse_entities
+    description: Resolve relative dates and identify team members in the notes
+    input:
+      notes_text: "{{ inputs.notes_text }}"
+      team_names: "{{ tables.team_members | pluck('name') }}"
+
+  - id: extract
+    type: agent
+    agent: action-item-extractor
+    description: AI extraction of tasks, decisions, and follow-up meetings
+    input:
+      notes_text: "{{ inputs.notes_text }}"
+      team_members: "{{ tables.team_members | select('name', 'role') }}"
+      resolved_dates: "{{ steps.parse_entities.output.resolved_dates }}"
+
+  - id: validate
+    type: function
+    function: validate_tasks
+    description: Split extracted tasks into valid vs. flagged for human review
+    input:
+      extracted_tasks: "{{ steps.extract.output.tasks }}"
+
+  - id: human_review
+    type: approval
+    title: "Review Extracted Tasks"
+    description: >
+      Found {{ steps.validate.output.total }} tasks.
+      {{ steps.validate.output.needs_attention }} need your attention.
+    data:
+      valid_tasks: "{{ steps.validate.output.valid_tasks }}"
+      flagged_tasks: "{{ steps.validate.output.flagged_tasks }}"
+      decisions: "{{ steps.extract.output.decisions }}"
+      follow_up_meetings: "{{ steps.extract.output.follow_up_meetings }}"
+      stats:
+        total: "{{ steps.validate.output.total }}"
+        ready_count: "{{ steps.validate.output.ready_count }}"
+        needs_attention: "{{ steps.validate.output.needs_attention }}"
+    # Workflow PAUSES here until human approves or dismisses tasks
+    # Frontend receives the data payload and renders the review modal
+    # Human can: edit owner/deadline on flagged tasks, dismiss false positives, confirm
+
+  - id: create_records
+    type: function
+    function: create_task_records
+    description: Commit approved tasks and meeting record to database
+    # Only runs after human_review step receives approval
+    depends_on: [human_review]
+    input:
+      approved_tasks: "{{ steps.human_review.approved_tasks }}"
+      meeting_title: "{{ inputs.meeting_title }}"
+      raw_notes: "{{ inputs.notes_text }}"
+      decisions: "{{ steps.extract.output.decisions }}"
+
+output:
+  meeting_id: "{{ steps.create_records.output.meeting_id }}"
+  task_count: "{{ steps.create_records.output.task_count }}"
+  task_ids: "{{ steps.create_records.output.task_ids }}"

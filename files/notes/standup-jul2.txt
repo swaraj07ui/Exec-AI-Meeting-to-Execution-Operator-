@@ -1,0 +1,6 @@
+[00:00:00] Rahul: Quick standup. Priya, go.
+[00:00:05] Priya: The email thing is almost done, needs copy review from Rahul before we send it.
+[00:00:20] Arjun: I'm stuck on the auth bug, waiting on a response from Auth0 support. Might need to escalate.
+[00:00:35] Rahul: We need to decide on the pricing page redesign — I'll think about it and decide by tomorrow.
+[00:00:45] Priya: Someone should update the docs to reflect the new onboarding flow. Not sure who.
+[00:00:55] Rahul: Alright, let's move.

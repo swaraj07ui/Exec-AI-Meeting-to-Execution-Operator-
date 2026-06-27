@@ -1,0 +1,76 @@
+name: deadline-check
+description: >
+  Daily job: find tasks due tomorrow or overdue where no follow-up has been sent,
+  draft Slack reminders via AI, get human approval, then mark sent.
+
+trigger:
+  type: schedule
+  cron: "0 9 * * *"   # 9:00 AM every day (pod's configured timezone)
+  description: Runs every morning to catch upcoming deadlines
+
+steps:
+  - id: find_due
+    type: query
+    table: tasks
+    description: Find tasks approaching deadline that haven't been reminded yet
+    filter:
+      - field: status
+        operator: "!="
+        value: done
+      - field: deadline
+        operator: "<="
+        value: "{{ date.tomorrow }}"
+      - field: followup_sent
+        operator: "="
+        value: false
+    # Returns list of task records
+
+  - id: draft_followups
+    type: foreach
+    description: For each due task, draft a Slack reminder using the AI agent
+    items: "{{ steps.find_due.output }}"
+    item_var: task
+    steps:
+      - id: get_owner
+        type: query
+        table: team_members
+        filter:
+          - field: name
+            operator: "="
+            value: "{{ task.owner }}"
+        single: true
+
+      - id: draft
+        type: agent
+        agent: followup-drafter
+        input:
+          task: "{{ task }}"
+          owner: "{{ steps.draft_followups.get_owner.output }}"
+
+      - id: approve_followup
+        type: approval
+        title: "Send reminder to {{ task.owner }}?"
+        description: "Task: '{{ task.title }}' — due {{ task.deadline }}"
+        data:
+          task: "{{ task }}"
+          owner: "{{ steps.draft_followups.get_owner.output }}"
+          message: "{{ steps.draft_followups.draft.output }}"
+        # Pauses for human to approve or skip each reminder
+
+      - id: mark_sent
+        type: update
+        table: tasks
+        description: Mark followup_sent so we don't re-remind
+        depends_on: [approve_followup]
+        filter:
+          - field: id
+            operator: "="
+            value: "{{ task.id }}"
+        data:
+          followup_sent: true
+        # Only runs if approve_followup is approved (not skipped)
+        condition: "{{ steps.draft_followups.approve_followup.approved == true }}"
+
+output:
+  tasks_checked: "{{ steps.find_due.output | length }}"
+  reminders_sent: "{{ steps.draft_followups | where('mark_sent.ran == true') | length }}"

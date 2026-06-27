@@ -1,0 +1,515 @@
+{
+  "format_version": 2,
+  "name": "meeting-exec-pod",
+  "contents": {
+    "tables": [
+      {
+        "name": "meetings",
+        "description": "Log of processed meeting transcripts with aggregated counts.",
+        "columns": [
+          {
+            "name": "id",
+            "type": "text",
+            "auto": true,
+            "primary": true,
+            "description": "UUID generated at creation"
+          },
+          {
+            "name": "title",
+            "type": "text",
+            "description": "Meeting title, derived from notes or user-supplied"
+          },
+          {
+            "name": "raw_notes",
+            "type": "text",
+            "description": "Full original transcript or notes text"
+          },
+          {
+            "name": "task_count",
+            "type": "integer",
+            "default": 0,
+            "description": "Number of tasks created from this meeting"
+          },
+          {
+            "name": "decision_count",
+            "type": "integer",
+            "default": 0,
+            "description": "Number of decisions recorded from this meeting"
+          },
+          {
+            "name": "processed_at",
+            "type": "timestamp",
+            "auto": "created_at",
+            "description": "When extraction was completed and records committed"
+          }
+        ]
+      },
+      {
+        "name": "tasks",
+        "description": "Action items extracted from meeting transcripts.",
+        "columns": [
+          {
+            "name": "id",
+            "type": "text",
+            "auto": true,
+            "primary": true,
+            "description": "UUID generated at creation"
+          },
+          {
+            "name": "title",
+            "type": "text",
+            "description": "Short imperative task title"
+          },
+          {
+            "name": "description",
+            "type": "text",
+            "description": "One sentence of context from the meeting"
+          },
+          {
+            "name": "owner",
+            "type": "text",
+            "description": "Team member name (references team_members.name)",
+            "foreign_key": "team_members.name"
+          },
+          {
+            "name": "deadline",
+            "type": "date",
+            "description": "ISO date YYYY-MM-DD or null if not set",
+            "nullable": true
+          },
+          {
+            "name": "status",
+            "type": "text",
+            "enum": [
+              "todo",
+              "in_progress",
+              "done",
+              "overdue"
+            ],
+            "default": "todo",
+            "description": "Current execution state"
+          },
+          {
+            "name": "priority",
+            "type": "text",
+            "enum": [
+              "high",
+              "medium",
+              "low"
+            ],
+            "default": "medium",
+            "description": "Task urgency level"
+          },
+          {
+            "name": "meeting_id",
+            "type": "text",
+            "description": "References meetings.id this task came from",
+            "foreign_key": "meetings.id",
+            "nullable": true
+          },
+          {
+            "name": "source_meeting_title",
+            "type": "text",
+            "description": "Denormalized meeting title for quick display",
+            "nullable": true
+          },
+          {
+            "name": "created_at",
+            "type": "timestamp",
+            "auto": "created_at",
+            "description": "When record was inserted"
+          },
+          {
+            "name": "followup_sent",
+            "type": "boolean",
+            "default": false,
+            "description": "Whether a deadline reminder has been dispatched"
+          }
+        ],
+        "indexes": [
+          {
+            "columns": [
+              "status",
+              "deadline"
+            ],
+            "description": "For daily deadline-check queries"
+          },
+          {
+            "columns": [
+              "meeting_id"
+            ],
+            "description": "For filtering board by meeting"
+          },
+          {
+            "columns": [
+              "owner"
+            ],
+            "description": "For per-person followup queries"
+          }
+        ]
+      },
+      {
+        "name": "team_members",
+        "description": "Core team roster. Seed rows pre-loaded at pod init.",
+        "columns": [
+          {
+            "name": "name",
+            "type": "text",
+            "primary": true,
+            "description": "Full name, used as owner reference in tasks"
+          },
+          {
+            "name": "role",
+            "type": "text",
+            "description": "Job title or function"
+          },
+          {
+            "name": "email",
+            "type": "text",
+            "description": "Contact email for follow-up messages"
+          }
+        ],
+        "seed": [
+          {
+            "name": "Rahul",
+            "role": "Founder",
+            "email": "rahul@startup.com"
+          },
+          {
+            "name": "Priya",
+            "role": "COO",
+            "email": "priya@startup.com"
+          },
+          {
+            "name": "Arjun",
+            "role": "CTO",
+            "email": "arjun@startup.com"
+          },
+          {
+            "name": "Sneha",
+            "role": "Design Lead",
+            "email": "sneha@startup.com"
+          },
+          {
+            "name": "Vikram",
+            "role": "Sales Lead",
+            "email": "vikram@startup.com"
+          }
+        ]
+      }
+    ],
+    "agents": [
+      {
+        "name": "action-item-extractor",
+        "description": "Extracts every action item, decision, and follow-up meeting from raw meeting notes or timestamped transcripts. Outputs structured JSON ready for validation.\n",
+        "role": "You are a meeting execution assistant. You receive raw meeting notes (may be\ntranscripts with timestamps or clean notes). You also receive a list of team\nmembers and pre-resolved dates. Your job:\n\n1. Extract EVERY action item, commitment, and \"to-do\" from the notes. If\n   something sounds like work someone needs to do, it IS a task \u00e2\u20ac\u201d even if\n   stated casually.\n2. Extract every DECISION made (use a separate \"decisions\" array).\n3. Extract any scheduled FOLLOW-UP MEETINGS.\n\nFor EACH action item, output:\n- title: Short, imperative task title (e.g. \"Finalize Figma files and hand off to engineering\")\n- description: One sentence of context\n- owner: EXACT name from the team members list. If unclear, use \"UNASSIGNED\"\n- deadline: ISO date string (YYYY-MM-DD). Use the resolved_dates map provided.\n  If no deadline found, use \"NO_DEADLINE\"\n- priority: \"high\" (blocking, revenue-impacting, or from leadership),\n  \"medium\" (normal sprint work), \"low\" (nice to have, vague)\n\nOutput STRICT JSON with no preamble, no markdown fences, no commentary:\n{\n  \"tasks\": [\n    {\n      \"title\": \"...\",\n      \"description\": \"...\",\n      \"owner\": \"...\",\n      \"deadline\": \"...\",\n      \"priority\": \"...\"\n    }\n  ],\n  \"decisions\": [\"...\", \"...\"],\n  \"follow_up_meetings\": [\"...\"]\n}\n",
+        "model": "claude-sonnet-4-6",
+        "grants": [
+          {
+            "resource": "tables/team_members",
+            "access": "read"
+          },
+          {
+            "resource": "files/notes",
+            "access": "read"
+          },
+          {
+            "resource": "tables/tasks",
+            "access": "write"
+          }
+        ],
+        "input_schema": {
+          "notes_text": {
+            "type": "text",
+            "description": "Raw transcript or meeting notes to process"
+          },
+          "team_members": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "text"
+                },
+                "role": {
+                  "type": "text"
+                }
+              }
+            },
+            "description": "Current team roster for owner resolution"
+          },
+          "resolved_dates": {
+            "type": "object",
+            "description": "Map of relative date phrases to ISO dates, e.g. {\"Thursday\": \"2025-07-03\", \"next Tuesday\": \"2025-07-08\"}\n"
+          }
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "tasks": {
+              "type": "array"
+            },
+            "decisions": {
+              "type": "array",
+              "items": {
+                "type": "text"
+              }
+            },
+            "follow_up_meetings": {
+              "type": "array",
+              "items": {
+                "type": "text"
+              }
+            }
+          }
+        }
+      },
+      {
+        "name": "followup-drafter",
+        "description": "Writes short, friendly Slack reminders for upcoming task deadlines. Tone: casual peer-to-peer, not corporate.\n",
+        "role": "You write short, friendly Slack messages reminding a team member about an\nupcoming task deadline. Keep it to 2-3 sentences. Mention the task, the\ndeadline, and ask if they need help. Do NOT be formal. Do NOT use corporate\njargon. Write like a colleague, not a manager.\n\nInput will include the task details and the owner's name. Output ONLY the\nmessage body \u00e2\u20ac\u201d no subject line, no \"Hi [name]:\" salutation, just the message.\n",
+        "model": "claude-sonnet-4-6",
+        "grants": [
+          {
+            "resource": "tables/tasks",
+            "access": "read"
+          },
+          {
+            "resource": "tables/team_members",
+            "access": "read"
+          }
+        ],
+        "input_schema": {
+          "task": {
+            "type": "object",
+            "properties": {
+              "title": {
+                "type": "text"
+              },
+              "description": {
+                "type": "text"
+              },
+              "deadline": {
+                "type": "text"
+              },
+              "priority": {
+                "type": "text"
+              }
+            },
+            "description": "Task record to generate reminder for"
+          },
+          "owner": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "text"
+              },
+              "role": {
+                "type": "text"
+              },
+              "email": {
+                "type": "text"
+              }
+            },
+            "description": "Team member who owns this task"
+          }
+        },
+        "output_schema": {
+          "type": "text",
+          "description": "The Slack message body, 2-3 sentences, casual tone"
+        }
+      }
+    ],
+    "workflows": [
+      {
+        "name": "deadline-check",
+        "description": "Daily job: find tasks due tomorrow or overdue where no follow-up has been sent, draft Slack reminders via AI, get human approval, then mark sent.\n",
+        "trigger": {
+          "type": "schedule",
+          "cron": "0 9 * * *",
+          "description": "Runs every morning to catch upcoming deadlines"
+        },
+        "steps": [
+          {
+            "id": "find_due",
+            "type": "query",
+            "table": "tasks",
+            "description": "Find tasks approaching deadline that haven't been reminded yet",
+            "filter": [
+              {
+                "field": "status",
+                "operator": "!=",
+                "value": "done"
+              },
+              {
+                "field": "deadline",
+                "operator": "<=",
+                "value": "{{ date.tomorrow }}"
+              },
+              {
+                "field": "followup_sent",
+                "operator": "=",
+                "value": false
+              }
+            ]
+          },
+          {
+            "id": "draft_followups",
+            "type": "foreach",
+            "description": "For each due task, draft a Slack reminder using the AI agent",
+            "items": "{{ steps.find_due.output }}",
+            "item_var": "task",
+            "steps": [
+              {
+                "id": "get_owner",
+                "type": "query",
+                "table": "team_members",
+                "filter": [
+                  {
+                    "field": "name",
+                    "operator": "=",
+                    "value": "{{ task.owner }}"
+                  }
+                ],
+                "single": true
+              },
+              {
+                "id": "draft",
+                "type": "agent",
+                "agent": "followup-drafter",
+                "input": {
+                  "task": "{{ task }}",
+                  "owner": "{{ steps.draft_followups.get_owner.output }}"
+                }
+              },
+              {
+                "id": "approve_followup",
+                "type": "approval",
+                "title": "Send reminder to {{ task.owner }}?",
+                "description": "Task: '{{ task.title }}' \u00e2\u20ac\u201d due {{ task.deadline }}",
+                "data": {
+                  "task": "{{ task }}",
+                  "owner": "{{ steps.draft_followups.get_owner.output }}",
+                  "message": "{{ steps.draft_followups.draft.output }}"
+                }
+              },
+              {
+                "id": "mark_sent",
+                "type": "update",
+                "table": "tasks",
+                "description": "Mark followup_sent so we don't re-remind",
+                "depends_on": [
+                  "approve_followup"
+                ],
+                "filter": [
+                  {
+                    "field": "id",
+                    "operator": "=",
+                    "value": "{{ task.id }}"
+                  }
+                ],
+                "data": {
+                  "followup_sent": true
+                },
+                "condition": "{{ steps.draft_followups.approve_followup.approved == true }}"
+              }
+            ]
+          }
+        ],
+        "output": {
+          "tasks_checked": "{{ steps.find_due.output | length }}",
+          "reminders_sent": "{{ steps.draft_followups | where('mark_sent.ran == true') | length }}"
+        }
+      },
+      {
+        "name": "process-meeting",
+        "description": "End-to-end pipeline: transcript \u00e2\u2020\u2019 parsed entities \u00e2\u2020\u2019 AI extraction \u00e2\u2020\u2019 validation \u00e2\u2020\u2019 human review \u00e2\u2020\u2019 committed task records.\n",
+        "trigger": "manual",
+        "inputs": {
+          "notes_text": {
+            "type": "text",
+            "required": true,
+            "description": "Raw meeting transcript or notes to process"
+          },
+          "meeting_title": {
+            "type": "text",
+            "required": false,
+            "default": "Untitled Meeting",
+            "description": "Human-readable title for the meeting record"
+          }
+        },
+        "steps": [
+          {
+            "id": "parse_entities",
+            "type": "function",
+            "function": "parse_entities",
+            "description": "Resolve relative dates and identify team members in the notes",
+            "input": {
+              "notes_text": "{{ inputs.notes_text }}",
+              "team_names": "{{ tables.team_members | pluck('name') }}"
+            }
+          },
+          {
+            "id": "extract",
+            "type": "agent",
+            "agent": "action-item-extractor",
+            "description": "AI extraction of tasks, decisions, and follow-up meetings",
+            "input": {
+              "notes_text": "{{ inputs.notes_text }}",
+              "team_members": "{{ tables.team_members | select('name', 'role') }}",
+              "resolved_dates": "{{ steps.parse_entities.output.resolved_dates }}"
+            }
+          },
+          {
+            "id": "validate",
+            "type": "function",
+            "function": "validate_tasks",
+            "description": "Split extracted tasks into valid vs. flagged for human review",
+            "input": {
+              "extracted_tasks": "{{ steps.extract.output.tasks }}"
+            }
+          },
+          {
+            "id": "human_review",
+            "type": "approval",
+            "title": "Review Extracted Tasks",
+            "description": "Found {{ steps.validate.output.total }} tasks. {{ steps.validate.output.needs_attention }} need your attention.\n",
+            "data": {
+              "valid_tasks": "{{ steps.validate.output.valid_tasks }}",
+              "flagged_tasks": "{{ steps.validate.output.flagged_tasks }}",
+              "decisions": "{{ steps.extract.output.decisions }}",
+              "follow_up_meetings": "{{ steps.extract.output.follow_up_meetings }}",
+              "stats": {
+                "total": "{{ steps.validate.output.total }}",
+                "ready_count": "{{ steps.validate.output.ready_count }}",
+                "needs_attention": "{{ steps.validate.output.needs_attention }}"
+              }
+            }
+          },
+          {
+            "id": "create_records",
+            "type": "function",
+            "function": "create_task_records",
+            "description": "Commit approved tasks and meeting record to database",
+            "depends_on": [
+              "human_review"
+            ],
+            "input": {
+              "approved_tasks": "{{ steps.human_review.approved_tasks }}",
+              "meeting_title": "{{ inputs.meeting_title }}",
+              "raw_notes": "{{ inputs.notes_text }}",
+              "decisions": "{{ steps.extract.output.decisions }}"
+            }
+          }
+        ],
+        "output": {
+          "meeting_id": "{{ steps.create_records.output.meeting_id }}",
+          "task_count": "{{ steps.create_records.output.task_count }}",
+          "task_ids": "{{ steps.create_records.output.task_ids }}"
+        }
+      }
+    ],
+    "functions": [],
+    "apps": []
+  }
+}

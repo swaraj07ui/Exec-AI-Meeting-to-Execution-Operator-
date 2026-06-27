@@ -1,0 +1,11 @@
+[00:00:00] Rahul: Alright, let's start the sprint review. Sneha, you're up first.
+[00:00:15] Sneha: I finished the onboarding flow mockups. We went from five steps down to three. The third step now combines payment and confirmation. I'll share the Figma link in Slack.
+[00:01:00] Rahul: That looks great. Much cleaner. When can engineering pick this up?
+[00:01:10] Sneha: I need to finalize the edge cases by Thursday. So Friday at the latest.
+[00:01:30] Rahul: Perfect. Arjun, can you start setting up the component library on Friday when she hands it off?
+[00:01:45] Arjun: Yeah, I can do that Friday. I'll have the base components ready by end of day.
+[00:02:00] Rahul: Good. Priya, what about the emails?
+[00:02:10] Priya: I've drafted them but they still reference the old five-step flow. I need to rewrite them to match Sneha's new three-step flow. I'll have it done before the release on July 10th.
+[00:02:45] Rahul: Sounds good. One more thing — I need to call the enterprise client to get their feedback on this. I'll try to do that by Wednesday.
+[00:03:00] Arjun: Oh, and the auth bug from last sprint — I'm still waiting on Auth0 support. But I'll make sure it's fixed this week regardless. It's blocking three enterprise clients.
+[00:03:20] Rahul: That's high priority. Get it done. Any other decisions? We're going with the three-step flow, release is July 10th, no backend changes needed. Let's meet again Friday at 3 to check progress.

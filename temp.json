@@ -1,0 +1,1 @@
+{"columns": [{"name": "id", "type": "uuid"}, {"name": "title", "type": "text"}], "primary_key_column": "id"}

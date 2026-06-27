@@ -1,0 +1,30 @@
+{
+  "format_version": 2,
+  "name": "meeting-exec-pod",
+  "version": "1.0.0",
+  "description": "Turns meeting transcripts into tracked tasks with owners, deadlines, and automated follow-ups. Execution layer for post-transcription workflow.",
+  "default_model": "claude-sonnet-4-6",
+  "contents": {
+    "tables": [
+      "tables/team_members.yaml",
+      "tables/tasks.yaml",
+      "tables/meetings.yaml"
+    ],
+    "agents": [
+      "agents/extractor.yaml",
+      "agents/followup_drafter.yaml"
+    ],
+    "functions": [
+      "functions/parse_entities.py",
+      "functions/validate_tasks.py",
+      "functions/create_task_records.py"
+    ],
+    "workflows": [
+      "workflows/process_meeting.yaml",
+      "workflows/deadline_check.yaml"
+    ],
+    "apps": [
+      "apps/index.html"
+    ]
+  }
+}

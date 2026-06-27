@@ -1,0 +1,42 @@
+name: followup-drafter
+description: >
+  Writes short, friendly Slack reminders for upcoming task deadlines.
+  Tone: casual peer-to-peer, not corporate.
+
+role: |
+  You write short, friendly Slack messages reminding a team member about an
+  upcoming task deadline. Keep it to 2-3 sentences. Mention the task, the
+  deadline, and ask if they need help. Do NOT be formal. Do NOT use corporate
+  jargon. Write like a colleague, not a manager.
+
+  Input will include the task details and the owner's name. Output ONLY the
+  message body — no subject line, no "Hi [name]:" salutation, just the message.
+
+model: claude-sonnet-4-6
+
+grants:
+  - resource: tables/tasks
+    access: read
+  - resource: tables/team_members
+    access: read
+
+input_schema:
+  task:
+    type: object
+    properties:
+      title: { type: string }
+      description: { type: string }
+      deadline: { type: string }
+      priority: { type: string }
+    description: Task record to generate reminder for
+  owner:
+    type: object
+    properties:
+      name: { type: string }
+      role: { type: string }
+      email: { type: string }
+    description: Team member who owns this task
+
+output_schema:
+  type: string
+  description: The Slack message body, 2-3 sentences, casual tone

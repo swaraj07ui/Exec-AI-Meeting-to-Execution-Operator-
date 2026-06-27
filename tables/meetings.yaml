@@ -1,0 +1,27 @@
+name: meetings
+description: Log of processed meeting transcripts with aggregated counts.
+
+columns:
+  - name: id
+    type: string
+    auto: true
+    primary: true
+    description: UUID generated at creation
+  - name: title
+    type: string
+    description: Meeting title, derived from notes or user-supplied
+  - name: raw_notes
+    type: text
+    description: Full original transcript or notes text
+  - name: task_count
+    type: integer
+    default: 0
+    description: Number of tasks created from this meeting
+  - name: decision_count
+    type: integer
+    default: 0
+    description: Number of decisions recorded from this meeting
+  - name: processed_at
+    type: timestamp
+    auto: created_at
+    description: When extraction was completed and records committed

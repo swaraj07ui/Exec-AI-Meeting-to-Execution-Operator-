@@ -1,0 +1,1 @@
+{"name": "meetings", "description": "Log of processed meeting transcripts with aggregated counts.", "columns": [{"name": "title", "type": "TEXT"}, {"name": "raw_notes", "type": "TEXT"}, {"name": "task_count", "type": "INTEGER"}, {"name": "decision_count", "type": "INTEGER"}, {"name": "processed_at", "type": "DATETIME"}], "primary_key_column": "id"}

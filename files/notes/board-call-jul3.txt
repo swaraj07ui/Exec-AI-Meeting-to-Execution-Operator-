@@ -1,0 +1,10 @@
+[00:00:00] Rahul: Thanks for taking the call. Here's where we are.
+[00:00:15] Investor: I want to see traction before the next round. What's the plan?
+[00:00:30] Rahul: We're focusing entirely on enterprise pipeline. We have 4 deals in progress.
+[00:00:50] Investor: You need more reps. How fast can you hire?
+[00:01:00] Rahul: We'll hire two AEs by end of August.
+[00:01:15] Investor: And marketing?
+[00:01:20] Rahul: We're cutting marketing spend by 30 percent and redirecting that budget to sales. Higher ROI.
+[00:01:40] Investor: Send me the updated pitch deck. Include the enterprise pipeline details.
+[00:01:50] Rahul: I'll have it to you by next Tuesday.
+[00:02:00] Investor: Good. Keep me posted. Talk next month.

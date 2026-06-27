@@ -1,0 +1,58 @@
+name: tasks
+description: Action items extracted from meeting transcripts.
+
+columns:
+  - name: id
+    type: string
+    auto: true
+    primary: true
+    description: UUID generated at creation
+  - name: title
+    type: string
+    description: Short imperative task title
+  - name: description
+    type: text
+    description: One sentence of context from the meeting
+  - name: owner
+    type: string
+    description: Team member name (references team_members.name)
+    foreign_key: team_members.name
+  - name: deadline
+    type: date
+    description: ISO date YYYY-MM-DD or null if not set
+    nullable: true
+  - name: status
+    type: string
+    enum: [todo, in_progress, done, overdue]
+    default: todo
+    description: Current execution state
+  - name: priority
+    type: string
+    enum: [high, medium, low]
+    default: medium
+    description: Task urgency level
+  - name: meeting_id
+    type: string
+    description: References meetings.id this task came from
+    foreign_key: meetings.id
+    nullable: true
+  - name: source_meeting_title
+    type: string
+    description: Denormalized meeting title for quick display
+    nullable: true
+  - name: created_at
+    type: timestamp
+    auto: created_at
+    description: When record was inserted
+  - name: followup_sent
+    type: boolean
+    default: false
+    description: Whether a deadline reminder has been dispatched
+
+indexes:
+  - columns: [status, deadline]
+    description: For daily deadline-check queries
+  - columns: [meeting_id]
+    description: For filtering board by meeting
+  - columns: [owner]
+    description: For per-person followup queries
