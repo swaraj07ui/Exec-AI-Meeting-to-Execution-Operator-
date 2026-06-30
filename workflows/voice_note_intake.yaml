@@ -1,0 +1,54 @@
+name: voice-note-intake
+description: >
+  Processes a raw WhatsApp voice note transcript (Hinglish OK) through the
+  voice-note-transcriber agent to clean it up, then feeds the cleaned notes
+  into the full process-meeting workflow. Supports manual trigger and future
+  WhatsApp webhook integration.
+
+trigger:
+  - manual
+  - webhook:
+      path: /webhooks/whatsapp-voice
+      method: POST
+      auth: bearer
+      description: >
+        Future: WhatsApp Business API can POST voice note transcriptions here.
+        Payload: { "from": "+91XXXXXXXXXX", "transcript": "..." }
+
+inputs:
+  raw_transcript:
+    type: string
+    required: true
+    description: Raw voice note text — Hinglish or informal English OK
+  meeting_title:
+    type: string
+    required: false
+    default: "WhatsApp Voice Note"
+    description: Human-readable meeting title
+  sender:
+    type: string
+    required: false
+    description: WhatsApp sender name or phone (for context)
+
+steps:
+  - id: transcribe
+    type: agent
+    agent: voice-note-transcriber
+    description: Clean and structure the raw Hinglish voice note transcript
+    input:
+      raw_transcript: "{{ inputs.raw_transcript }}"
+
+  - id: process
+    type: workflow
+    workflow: process-meeting
+    description: >
+      Feed the cleaned transcript into the full extraction pipeline —
+      reusing parse_entities → extract → validate → human_review → create_records
+    input:
+      notes_text: "{{ steps.transcribe.output }}"
+      meeting_title: "{{ inputs.meeting_title }}"
+
+output:
+  cleaned_transcript: "{{ steps.transcribe.output }}"
+  meeting_id: "{{ steps.process.output.meeting_id }}"
+  task_count: "{{ steps.process.output.task_count }}"

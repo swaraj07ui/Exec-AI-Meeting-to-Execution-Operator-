@@ -1,7 +1,8 @@
 name: process-meeting
 description: >
   End-to-end pipeline: transcript → parsed entities → AI extraction →
-  validation → human review → committed task records.
+  contradiction check → recurring task detection → validation →
+  human review → committed task + decision records.
 
 trigger: manual
 
@@ -34,6 +35,14 @@ steps:
       team_members: "{{ tables.team_members | select('name', 'role') }}"
       resolved_dates: "{{ steps.parse_entities.output.resolved_dates }}"
 
+  - id: check_contradictions
+    type: agent
+    agent: contradiction-detector
+    description: Compare newly extracted decisions against all historical decisions
+    input:
+      new_decisions: "{{ steps.extract.output.decisions }}"
+      existing_decisions: "{{ tables.decisions | select('text', 'meeting_title', 'created_at') }}"
+
   - id: validate
     type: function
     function: validate_tasks
@@ -47,23 +56,27 @@ steps:
     description: >
       Found {{ steps.validate.output.total }} tasks.
       {{ steps.validate.output.needs_attention }} need your attention.
+      {{ steps.check_contradictions.output.contradictions | length }} decision conflict(s) detected.
     data:
       valid_tasks: "{{ steps.validate.output.valid_tasks }}"
       flagged_tasks: "{{ steps.validate.output.flagged_tasks }}"
       decisions: "{{ steps.extract.output.decisions }}"
+      contradictions: "{{ steps.check_contradictions.output.contradictions }}"
       follow_up_meetings: "{{ steps.extract.output.follow_up_meetings }}"
       stats:
         total: "{{ steps.validate.output.total }}"
         ready_count: "{{ steps.validate.output.ready_count }}"
         needs_attention: "{{ steps.validate.output.needs_attention }}"
+        contradiction_count: "{{ steps.check_contradictions.output.contradictions | length }}"
     # Workflow PAUSES here until human approves or dismisses tasks
     # Frontend receives the data payload and renders the review modal
-    # Human can: edit owner/deadline on flagged tasks, dismiss false positives, confirm
+    # Human can: edit owner/deadline on flagged tasks, dismiss false positives,
+    # override contradictions, confirm
 
   - id: create_records
     type: function
     function: create_task_records
-    description: Commit approved tasks and meeting record to database
+    description: Commit approved tasks, decisions, and meeting record to database
     # Only runs after human_review step receives approval
     depends_on: [human_review]
     input:
@@ -71,8 +84,10 @@ steps:
       meeting_title: "{{ inputs.meeting_title }}"
       raw_notes: "{{ inputs.notes_text }}"
       decisions: "{{ steps.extract.output.decisions }}"
+      overridden_contradictions: "{{ steps.human_review.overridden_contradictions }}"
 
 output:
   meeting_id: "{{ steps.create_records.output.meeting_id }}"
   task_count: "{{ steps.create_records.output.task_count }}"
   task_ids: "{{ steps.create_records.output.task_ids }}"
+  decision_count: "{{ steps.create_records.output.decision_count }}"

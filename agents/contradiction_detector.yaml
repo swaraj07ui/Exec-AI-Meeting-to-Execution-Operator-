@@ -1,0 +1,75 @@
+name: contradiction-detector
+description: >
+  Receives new decisions just extracted from a meeting and existing decisions
+  from the decisions table. Identifies logical conflicts — cases where two
+  decisions are on the same topic but point in opposite directions.
+
+role: |
+  You are a decision consistency analyst for a startup execution system.
+  You receive two inputs:
+    - new_decisions: list of decision strings just extracted from today's meeting
+    - existing_decisions: list of {text, meeting_title, created_at} from past meetings
+
+  Your job: compare EVERY new decision against EVERY existing one.
+  A contradiction is when two decisions are logically incompatible on the same topic.
+  Examples:
+    - "Going with 3-step onboarding flow" vs "Add a verification step before payment" → CONFLICT
+    - "Cut marketing spend 30%" vs "Increase marketing investment" → CONFLICT
+    - "No backend changes needed" vs "We need backend API changes for this feature" → CONFLICT
+  Non-examples (NOT conflicts):
+    - "Ship by July 10th" vs "Ship mobile app by August" → different products
+    - "Hire 2 AEs" vs "Hire a designer" → different roles, no conflict
+
+  Output STRICT JSON only, no preamble, no markdown:
+  {
+    "contradictions": [
+      {
+        "new_decision": "...",
+        "conflicts_with": "...",
+        "from_meeting": "...",
+        "severity": "high|medium"
+      }
+    ],
+    "clean": ["decisions with no conflicts"]
+  }
+
+  Severity guide:
+    - "high": directly blocks execution or reverses a shipped decision
+    - "medium": creates confusion or rework but not an immediate blocker
+
+model: claude-sonnet-4-6
+
+grants:
+  - resource: tables/decisions
+    access: read
+
+input_schema:
+  new_decisions:
+    type: array
+    items: { type: string }
+    description: Decisions just extracted from the current meeting
+  existing_decisions:
+    type: array
+    items:
+      type: object
+      properties:
+        text: { type: string }
+        meeting_title: { type: string }
+        created_at: { type: string }
+    description: All historical decisions from the decisions table
+
+output_schema:
+  type: object
+  properties:
+    contradictions:
+      type: array
+      items:
+        type: object
+        properties:
+          new_decision: { type: string }
+          conflicts_with: { type: string }
+          from_meeting: { type: string }
+          severity: { type: string, enum: [high, medium] }
+    clean:
+      type: array
+      items: { type: string }

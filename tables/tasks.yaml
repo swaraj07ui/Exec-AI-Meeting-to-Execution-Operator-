@@ -23,7 +23,7 @@ columns:
     nullable: true
   - name: status
     type: string
-    enum: [todo, in_progress, done, overdue]
+    enum: [todo, in_progress, blocked, pending_approval, done, overdue]
     default: todo
     description: Current execution state
   - name: priority
@@ -49,6 +49,61 @@ columns:
     default: false
     description: Whether a deadline reminder has been dispatched
 
+  # ── F2: Blocker Detection columns ──────────────────────────────────────────
+  - name: blocked_reason
+    type: string
+    nullable: true
+    description: Free-text explanation of what is blocking this task
+  - name: blocked_at
+    type: timestamp
+    nullable: true
+    description: When the blocker was reported
+  - name: escalated
+    type: boolean
+    default: false
+    description: Whether a blocker escalation reminder has been sent
+
+  # ── F3: Recurring Task Detection columns ───────────────────────────────────
+  - name: recurrence_count
+    type: integer
+    default: 1
+    description: How many times this task (or a similar one) has appeared across meetings
+  - name: first_seen_meeting_id
+    type: string
+    nullable: true
+    description: The meeting_id where this task was first created
+    foreign_key: meetings.id
+  - name: is_recurring
+    type: boolean
+    default: false
+    description: True if this task was detected as a duplicate of an existing task
+
+  # ── CG: Task Completion Guard columns ──────────────────────────────────────
+  - name: completion_note
+    type: text
+    nullable: true
+    description: Employee-written description of what was actually done to complete the task
+  - name: completion_evidence
+    type: string
+    nullable: true
+    description: Link to PR, Notion doc, Loom recording, or screenshot proving completion
+  - name: completion_verified
+    type: boolean
+    default: false
+    description: True if the AI verifier (completion-verifier agent) approved the completion note
+  - name: completed_at
+    type: timestamp
+    nullable: true
+    description: When the task was marked done after passing verification
+  - name: rejected_count
+    type: integer
+    default: 0
+    description: Number of times the employee tried to mark done but was rejected by AI or founder
+  - name: cg_escalated
+    type: boolean
+    default: false
+    description: True if this task was escalated due to repeated completion rejections (rejected_count >= 2)
+
 indexes:
   - columns: [status, deadline]
     description: For daily deadline-check queries
@@ -56,3 +111,11 @@ indexes:
     description: For filtering board by meeting
   - columns: [owner]
     description: For per-person followup queries
+  - columns: [is_recurring, recurrence_count]
+    description: For recurring task reports
+  - columns: [escalated, status]
+    description: For blocker escalation queries
+  - columns: [completion_verified, status]
+    description: For verified completion stats in insights bar
+  - columns: [rejected_count]
+    description: For finding disputed tasks needing founder attention

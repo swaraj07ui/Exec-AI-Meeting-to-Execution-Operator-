@@ -1,0 +1,33 @@
+name: decisions
+description: >
+  Decisions made in meetings. Used by the contradiction_detector agent to
+  surface logical conflicts between new decisions and historical ones.
+
+columns:
+  - name: id
+    type: string
+    auto: true
+    primary: true
+    description: UUID generated at creation
+  - name: text
+    type: string
+    description: Full text of the decision as extracted by the AI agent
+  - name: meeting_id
+    type: string
+    description: References meetings.id this decision came from
+    foreign_key: meetings.id
+    nullable: true
+  - name: meeting_title
+    type: string
+    description: Denormalized meeting title for quick display
+    nullable: true
+  - name: created_at
+    type: timestamp
+    auto: created_at
+    description: When this decision was recorded
+
+indexes:
+  - columns: [meeting_id]
+    description: For filtering decisions by meeting
+  - columns: [created_at]
+    description: For chronological ordering in contradiction checks

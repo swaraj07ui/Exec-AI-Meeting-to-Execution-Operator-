@@ -1,18 +1,21 @@
 {
   "format_version": 2,
   "name": "meeting-exec-pod",
-  "version": "1.0.0",
-  "description": "Turns meeting transcripts into tracked tasks with owners, deadlines, and automated follow-ups. Execution layer for post-transcription workflow.",
+  "version": "2.0.0",
+  "description": "Turns meeting transcripts into tracked tasks with owners, deadlines, automated follow-ups, contradiction detection, blocker escalation, recurring task alerts, and WhatsApp voice note intake.",
   "default_model": "claude-sonnet-4-6",
   "contents": {
     "tables": [
       "tables/team_members.yaml",
       "tables/tasks.yaml",
-      "tables/meetings.yaml"
+      "tables/meetings.yaml",
+      "tables/decisions.yaml"
     ],
     "agents": [
       "agents/extractor.yaml",
-      "agents/followup_drafter.yaml"
+      "agents/followup_drafter.yaml",
+      "agents/contradiction_detector.yaml",
+      "agents/transcriber.yaml"
     ],
     "functions": [
       "functions/parse_entities.py",
@@ -21,7 +24,9 @@
     ],
     "workflows": [
       "workflows/process_meeting.yaml",
-      "workflows/deadline_check.yaml"
+      "workflows/deadline_check.yaml",
+      "workflows/blocker_check.yaml",
+      "workflows/voice_note_intake.yaml"
     ],
     "apps": [
       "apps/index.html"
