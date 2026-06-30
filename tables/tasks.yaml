@@ -104,6 +104,16 @@ columns:
     default: false
     description: True if this task was escalated due to repeated completion rejections (rejected_count >= 2)
 
+  # ── V2: Power Features columns ──────────────────────────────────────────────
+  - name: blocked_by
+    type: json
+    nullable: true
+    description: Array of task IDs that must be completed before this task can be started or marked done.
+  - name: history
+    type: json
+    nullable: true
+    description: Audit trail of state changes. Array of objects {status, timestamp, by, note}
+
 indexes:
   - columns: [status, deadline]
     description: For daily deadline-check queries
