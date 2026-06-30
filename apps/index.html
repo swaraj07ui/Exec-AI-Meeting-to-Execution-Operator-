@@ -334,7 +334,7 @@ textarea#hinglish::placeholder{color:var(--muted2)}
 .btn-primary:disabled{opacity:.4;cursor:not-allowed;transform:none;box-shadow:none}
 /* Command palette */
 .cmd-backdrop{position:fixed;inset:0;background:rgba(30,42,59,0.6);backdrop-filter:blur(10px);z-index:300;display:flex;align-items:flex-start;justify-content:center;padding-top:14vh;animation:fadeIn .12s ease}
-.cmd-box{background:#fff;border-radius:14px;width:100%;max-width:530px;overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,0.2);animation:zoomIn .18s cubic-bezier(0.2,0.8,0.2,1)}
+.cmd-box{background:var(--card-bg);backdrop-filter:var(--glass-blur);-webkit-backdrop-filter:var(--glass-blur);border:1px solid var(--glass-border);border-radius:14px;width:100%;max-width:530px;overflow:hidden;box-shadow:var(--card-shadow);animation:zoomIn .18s cubic-bezier(0.2,0.8,0.2,1)}
 .cmd-input-row{display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--border)}
 .cmd-search-icon{color:var(--muted);font-size:16px}
 .cmd-input{flex:1;background:none;border:none;outline:none;font-family:'Plus Jakarta Sans',sans-serif;font-size:14px;color:var(--text)}
