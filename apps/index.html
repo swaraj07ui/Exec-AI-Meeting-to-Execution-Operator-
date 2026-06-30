@@ -77,7 +77,7 @@ body{background:var(--body-bg);color:var(--text);font-family:'Plus Jakarta Sans'
 .blob-2{bottom:-20%;right:-10%;width:60vw;height:60vw;background:var(--purple);animation-delay:-5s}
 .blob-3{top:40%;left:40%;width:40vw;height:40vw;background:var(--green);animation-delay:-10s}
 .app{display:flex;min-height:100vh}
-.sidebar{width:260px;min-width:260px;background:var(--sidebar-bg);backdrop-filter:var(--glass-blur);-webkit-backdrop-filter:var(--glass-blur);border-right:1px solid var(--glass-border);display:flex;flex-direction:column;position:fixed;top:0;left:0;height:100vh;overflow-y:auto;z-index:100;box-shadow:var(--card-shadow)}
+.sidebar{width:260px;min-width:260px;background:var(--sidebar-bg);backdrop-filter:var(--glass-blur);-webkit-backdrop-filter:var(--glass-blur);border-right:1px solid var(--glass-border);display:flex;flex-direction:column;position:fixed;top:0;left:0;height:100vh;overflow-y:auto;z-index:100;box-shadow:var(--card-shadow);transition:transform .3s cubic-bezier(.2,.8,.2,1)}
 .sidebar-logo{display:flex;align-items:center;gap:10px;padding:22px 20px 18px;border-bottom:1px solid var(--glass-border)}
 .sidebar-logo img{width:36px;height:36px;border-radius:8px;object-fit:cover;flex-shrink:0}
 .sidebar-logo-text{font-size:16px;font-weight:800;color:#fff;letter-spacing:-.3px}
@@ -98,7 +98,7 @@ body{background:var(--body-bg);color:var(--text);font-family:'Plus Jakarta Sans'
 .user-name{font-size:12.5px;font-weight:600;color:#fff}
 .user-role{font-size:10px;color:var(--sidebar-text)}
 .lemma-chip{margin-left:auto;font-size:9px;font-weight:700;padding:2px 6px;border-radius:4px;background:var(--blue-light);color:var(--blue);border:1px solid rgba(93,135,255,0.3)}
-.topbar{position:fixed;top:0;left:260px;right:0;height:64px;background:var(--card-bg);backdrop-filter:var(--glass-blur);-webkit-backdrop-filter:var(--glass-blur);border-bottom:1px solid var(--glass-border);display:flex;align-items:center;justify-content:space-between;padding:0 28px;z-index:90;box-shadow:var(--card-shadow);transition:background .3s}
+.topbar{position:fixed;top:0;left:260px;right:0;height:64px;background:var(--card-bg);backdrop-filter:var(--glass-blur);-webkit-backdrop-filter:var(--glass-blur);border-bottom:1px solid var(--glass-border);display:flex;align-items:center;justify-content:space-between;padding:0 28px;z-index:90;box-shadow:var(--card-shadow);transition:background .3s, left .3s cubic-bezier(.2,.8,.2,1)}
 .topbar-left{display:flex;align-items:center;gap:16px}
 .breadcrumb{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted)}
 .breadcrumb-sep{color:var(--muted2)}
@@ -113,7 +113,7 @@ body{background:var(--body-bg);color:var(--text);font-family:'Plus Jakarta Sans'
 .topbar-btn:hover{background:var(--body-bg);border-color:var(--blue);color:var(--blue)}
 .topbar-notif-dot{position:absolute;top:6px;right:6px;width:7px;height:7px;border-radius:50%;background:var(--red);border:2px solid #fff}
 .topbar-avatar{width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--blue),var(--purple));display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;cursor:pointer;flex-shrink:0}
-.main{margin-left:260px;padding-top:64px;min-height:100vh}
+.main{margin-left:260px;padding-top:64px;min-height:100vh;transition:margin-left .3s cubic-bezier(.2,.8,.2,1)}
 .content{padding:28px}
 .page-header{margin-bottom:24px}
 .page-title{font-size:20px;font-weight:800;color:var(--text);margin-bottom:4px}
@@ -451,6 +451,10 @@ textarea#hinglish::placeholder{color:var(--muted2)}
 .cg-rejection-body{padding:16px 22px}
 .cg-rejection-reason{font-size:13px;color:var(--text);line-height:1.6;background:var(--red-light);border:1px solid rgba(250,137,107,0.3);border-radius:8px;padding:10px 13px;margin-top:8px}
 .cg-rejection-foot{padding:14px 22px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px}
+/* Sidebar Toggle */
+body.sidebar-collapsed .sidebar { transform: translateX(-100%); }
+body.sidebar-collapsed .main { margin-left: 0; }
+body.sidebar-collapsed .topbar { left: 0; }
 </style>
 </head>
 <body>
@@ -506,6 +510,9 @@ textarea#hinglish::placeholder{color:var(--muted2)}
 <!-- TOPBAR -->
 <div class="topbar">
   <div class="topbar-left">
+    <button class="topbar-btn" onclick="toggleSidebar()" title="Toggle Sidebar" style="margin-right:8px; display:flex; align-items:center; justify-content:center;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+    </button>
     <div class="breadcrumb"><span>Exec</span><span class="breadcrumb-sep">/</span><span class="breadcrumb-current">Execution Board</span></div>
     <div class="topbar-search">
       <span>🔍</span>
@@ -1770,6 +1777,11 @@ document.addEventListener('click', e => {
     dd.style.display = 'none';
   }
 });
+
+// ── V2: Sidebar Toggle ───────────────────────────────────────────────────────
+function toggleSidebar() {
+  document.body.classList.toggle('sidebar-collapsed');
+}
 
 // Update submitBlocker to add a notification
 const originalSubmitBlocker = window.submitBlocker;
