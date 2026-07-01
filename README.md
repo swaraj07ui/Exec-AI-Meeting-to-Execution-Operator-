@@ -25,7 +25,7 @@ Startups run 6–8 meetings a week. Three compounding problems kill execution:
 ```
 Meeting Notes / Voice Note (Hinglish OK)
           ↓
-  voice-note-transcriber agent   ← cleans Hinglish into structured English
+  [voice-note-transcriber agent] OR [hinglish-cleaner agent] ← (Note: These two currently have duplicate functionality for cleaning Hinglish)
           ↓
   action-item-extractor agent    ← Claude extracts tasks + decisions
           ↓
@@ -224,7 +224,7 @@ lemma table list
 # meetings, tasks, team_members, decisions
 
 lemma agent list
-# action-item-extractor, followup-drafter, contradiction-detector, voice-note-transcriber, completion-verifier
+# action-item-extractor, followup-drafter, contradiction-detector, voice-note-transcriber, completion-verifier, hinglish-cleaner, recurring-checker
 
 lemma workflow list
 # process-meeting, deadline-check, blocker-check, voice-note-intake
@@ -271,7 +271,7 @@ Startups run 6–8 meetings weekly. 80% of action items die in transcripts. Exec
 Exec chains 5 Lemma agents in a human-in-the-loop workflow: transcribe → extract → detect contradictions → validate → human review → persist. The frontend is fully functional in mock mode (identical UX to the live Lemma API), so the demo works offline. The `completion-verifier` agent adds a new accountability layer that doesn't exist in any competing tool.
 
 ### Lemma SDK Utilisation (15%)
-**4 Tables · 5 Agents · 4 Workflows · 3 Functions · 1 App.**  
+**4 Tables · 7 Agents · 4 Workflows · 3 Functions · 1 App.**  
 The `decisions` table is a Lemma-native resource — it only exists because Lemma persists structured agent output across workflow runs. Cross-meeting contradiction detection is impossible without this. The `blocker-check` and `deadline-check` workflows use Lemma's scheduled triggers. The `process-meeting` workflow uses Lemma's human approval step to pause execution and surface data to the frontend.
 
 ### Design & UX
