@@ -740,12 +740,42 @@ function wordOverlap(a,b){
   return wb.filter(w=>setA.has(w)).length/Math.max(wa.length,wb.length);
 }
 
-function detectRecurring(newTasks){
+async function detectRecurring(newTasks){
   const recurringFound=[],uniqueTasks=[];
   const active=tasks.filter(t=>t.status!=='done');
+  
   for(const nt of newTasks){
     let matched=null;
-    for(const et of active){if(wordOverlap(nt.title,et.title)>=0.42){matched=et;break;}}
+    
+    let candidates = [];
+    for(const et of active){
+      const score = wordOverlap(nt.title,et.title);
+      if(score >= 0.25) candidates.push({et, score});
+    }
+    candidates.sort((a,b) => b.score - a.score);
+    
+    for(const {et, score} of candidates){
+      try {
+        const ctrl = new AbortController(); setTimeout(()=>ctrl.abort(), 3000);
+        const res = await fetch(`${API}/agents/recurring-checker/run`, {
+          method: 'POST',
+          signal: ctrl.signal,
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            inputs: { task1: nt.title, task2: et.title }
+          })
+        });
+        if(!res.ok) throw new Error();
+        const data = await res.json();
+        const isSame = data.output.is_same;
+        console.log(`[Recurring Check] LIVE API compared: "${nt.title}" vs "${et.title}" -> ${isSame}`);
+        if(isSame) { matched = et; break; }
+      } catch (e) {
+        console.log(`[Recurring Check] LIVE API failed, using fallback >=0.42 for: "${nt.title}"`);
+        if(score >= 0.42) { matched = et; break; }
+      }
+    }
+    
     if(matched){
       matched.recurrence_count=(matched.recurrence_count||1)+1;
       matched.is_recurring=true;
@@ -757,33 +787,48 @@ function detectRecurring(newTasks){
 }
 
 // ── F4: Hinglish Voice Note Cleaning ──────────────────────────────────────────
-const HINGLISH_SAMPLES=[
-  {re:/arjun.*bug|bug.*arjun|arjun.*fix/i,key:'sprint',cleaned:"Arjun: Fix the auth bug by Friday.\nPriya: Send the email before the release date.\nRahul: Send the updated pitch deck to the investor by next Tuesday."},
-  {re:/rahul.*deck|deck.*investor|investor.*deck/i,key:'board',cleaned:"Rahul: Send the updated pitch deck with enterprise pipeline details to the investor by next Tuesday."},
-  {re:/docs|update.*onboarding|onboarding.*update/i,key:'standup',cleaned:"Rahul: Review email copy for onboarding sequence.\nArjun: Escalate Auth0 support ticket for auth bug.\nRahul: Decide on pricing page redesign approach by tomorrow.\nUpdate the docs to reflect the new onboarding flow — owner TBD."},
-];
-
-function cleanHinglish(text){
-  for(const s of HINGLISH_SAMPLES){if(s.re.test(text))return{cleaned:s.cleaned,key:s.key};}
-  // Generic clean-up
-  let out=text
-    .replace(/haan\s+toh\s+/gi,'').replace(/karna\s+hai|karo/gi,'').replace(/bhejni\s+hai|bhejna\s+hai/gi,'')
-    .replace(/kal\s+tak/gi,'by tomorrow').replace(/by\s+friday/gi,'by Friday')
-    .replace(/aur\s+/gi,'\n').replace(/\s+/g,' ');
-  return{cleaned:out.trim(),key:null};
-}
-
 function onHinglishChange(){document.getElementById('cleanBtn').disabled=document.getElementById('hinglish').value.trim().length<10;}
 
 async function startVoiceClean(){
   const raw=document.getElementById('hinglish').value.trim();if(!raw)return;
   const btn=document.getElementById('cleanBtn');btn.disabled=true;
+  
   const steps=['⏳ Detecting language…','🧠 Parsing Hinglish…','✍️ Structuring notes…'];
-  for(const s of steps){btn.innerHTML=s;await sleep(450);}
-  const{cleaned,key}=cleanHinglish(raw);
+  let currentStep = 0;
+  const stepInterval = setInterval(() => { btn.innerHTML=steps[currentStep % steps.length]; currentStep++; }, 450);
+  
+  let cleaned = '';
+  try {
+    const ctrl=new AbortController();setTimeout(()=>ctrl.abort(),15000);
+    const res=await fetch(`${API}/agents/hinglish-cleaner/run`,{
+      method:'POST',
+      signal:ctrl.signal,
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({inputs: raw})
+    });
+    if(!res.ok)throw new Error();
+    const data=await res.json();
+    cleaned = data.output.cleaned || data.output;
+  } catch (e) {
+    cleaned = `[Live cleaning unavailable, showing raw transcript]\n\n${raw}`;
+  }
+  clearInterval(stepInterval);
+  
   const ta=document.getElementById('notes');
   ta.value='';let i=0;
-  const timer=setInterval(()=>{ta.value=cleaned.slice(0,i);i+=4;if(i>cleaned.length){clearInterval(timer);ta.value=cleaned;onNotesChange();if(key)currentTxKey=key;}},12);
+  const timer=setInterval(()=>{
+    ta.value=cleaned.slice(0,i);
+    i+=4;
+    if(i>cleaned.length){
+      clearInterval(timer);
+      ta.value=cleaned;
+      onNotesChange();
+      if(/sprint/i.test(raw)) currentTxKey='sprint';
+      else if(/standup/i.test(raw)) currentTxKey='standup';
+      else if(/board|investor/i.test(raw)) currentTxKey='board';
+    }
+  },12);
+  
   btn.innerHTML='✨ Clean &amp; Extract →';btn.disabled=true;
   document.getElementById('hinglish').value='';
   await sleep(1800);
@@ -915,11 +960,37 @@ async function mockExtract(notes,key){
   const val=validateTasks(data.tasks);
   const allTasks=[...val.valid_tasks,...val.flagged_tasks];
   // F3: Detect recurring BEFORE showing modal
-  const{recurringFound,uniqueTasks}=detectRecurring(allTasks);
+  const{recurringFound,uniqueTasks}=await detectRecurring(allTasks);
   const newVal=validateTasks(uniqueTasks);
+  
   // F1: Detect contradictions
   const mockDecisions=data.decisions||[];
-  const{contradictions,clean}=detectContradictions(mockDecisions);
+  let contradictions = [], clean = [];
+  try {
+    const ctrl=new AbortController();setTimeout(()=>ctrl.abort(),5000);
+    const res = await fetch(`${API}/agents/contradiction-detector/run`, {
+      method: 'POST',
+      signal: ctrl.signal,
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        inputs: {
+          new_decisions: mockDecisions.map(d => d.text || d),
+          existing_decisions: decisions.map(d => ({text: d.text, meeting_title: d.meeting_title, created_at: d.created_at}))
+        }
+      })
+    });
+    if(!res.ok) throw new Error();
+    const result = await res.json();
+    contradictions = result.output.contradictions || [];
+    clean = result.output.clean || [];
+    console.log('[Contradiction Check] Used LIVE API');
+  } catch (e) {
+    console.log('[Contradiction Check] Used MOCK fallback');
+    const detect = detectContradictions(mockDecisions);
+    contradictions = detect.contradictions;
+    clean = detect.clean;
+  }
+  
   stopTimer();stopTokenCounter();
   showReviewModal({...newVal,decisions:mockDecisions,contradictions,recurringFound},data.title,null);
 }
