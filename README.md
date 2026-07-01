@@ -1,152 +1,200 @@
 # ⚡ Exec — Meeting to Action
 
-> **Lemma Hackathon Submission** · Built by Swaraj Keshav Gawde
+> **Lemma Hackathon Submission** · Built by Swaraj Keshav Gawde  
+> 🔗 **Live Demo:** [swaraj07ui.github.io/Exec-AI-Meeting-to-Execution-Operator-/apps](https://swaraj07ui.github.io/Exec-AI-Meeting-to-Execution-Operator-/apps/index.html)
 
-**Exec** is a Lemma-powered agentic operator that turns raw meeting transcripts into tracked, owned, deadline-bound action items — in under 30 seconds. Version 2.0 adds four new features: **Contradiction Detector**, **Blocker Escalation**, **Recurring Task Alerts**, and **WhatsApp Voice Note Intake**.
+**Exec** is a Lemma-powered agentic operator that turns raw meeting transcripts into tracked, owned, deadline-bound action items — in under 30 seconds.
+
+It solves a real problem every startup founder faces: **80% of action items die in meeting notes.** Exec bridges the gap between "we discussed it" and "it actually got done."
 
 ---
 
 ## 🎯 The Problem
 
-Startups run 6–8 meetings a week, but **80% of action items die** in Google Docs or Otter.ai transcripts. Three deeper problems compound this:
+Startups run 6–8 meetings a week. Three compounding problems kill execution:
 
-1. **Contradictions go unnoticed** — "We're going with a 3-step flow" (Jul 1) → "Let's add a verification step" (Jul 3). Nobody catches the conflict. Weeks get wasted re-litigating closed decisions.
-2. **Blockers become invisible** — A task sits "in progress" for 4 days while someone is silently stuck waiting on Auth0 support. Nobody escalates.
+1. **Contradictions go unnoticed** — "Going with 3-step flow" (Jul 1) → "Add a verification step" (Jul 3). Nobody catches it. Weeks get re-litigated.
+2. **Blockers become invisible** — A task sits "in progress" for 4 days while someone is silently stuck on Auth0 support. Nobody escalates.
 3. **Recurring tasks accumulate** — "Update docs" appears in 3 consecutive standups. Nobody notices it's never getting done.
 
 ---
 
-## 🧠 The Solution
-
-**Exec** is a Lemma-powered operator that sits downstream of transcription tools.
+## 🧠 How It Works
 
 ```
-Transcript or Voice Note in
-     ↓
-voice-note-transcriber agent (Hinglish/informal → structured English)
-     ↓
-action-item-extractor agent (Claude via Lemma)
-     ↓
-contradiction-detector agent (compares new decisions vs. all historical ones)
-     ↓
-recurring task detection (word-overlap similarity, in Python + JS)
-     ↓
-deterministic validation (owners, deadlines, priority)
-     ↓
-Workflow PAUSES → Human approval step (HUMAN-IN-THE-LOOP)
-     ↓
-Founder reviews tasks in 30 seconds, sees conflict warnings and recurring alerts
-     ↓
-Tasks + decisions committed to Lemma datastore → Execution board
-     ↓
-blocker-check workflow (daily) → escalation reminders via followup-drafter
-deadline-check workflow (daily) → deadline reminders via followup-drafter
+Meeting Notes / Voice Note (Hinglish OK)
+          ↓
+  voice-note-transcriber agent   ← cleans Hinglish into structured English
+          ↓
+  action-item-extractor agent    ← Claude extracts tasks + decisions
+          ↓
+  contradiction-detector agent   ← compares new decisions vs historical ones
+          ↓
+  recurring task detection       ← word-overlap similarity check (Python + JS)
+          ↓
+  validate_tasks function        ← flags missing owners / deadlines
+          ↓
+  ⏸ HUMAN-IN-THE-LOOP PAUSE     ← founder reviews in the web app
+          ↓
+  create_task_records function   ← commits tasks + decisions to Lemma datastore
+          ↓
+  Kanban Board                   ← 4-column execution board (To Do / In Progress / Blocked / Done)
+          ↓
+  blocker-check workflow (9 AM daily)   → escalation reminders
+  deadline-check workflow (8 AM daily)  → deadline reminders
 ```
 
 ---
 
-## 🏗️ Lemma SDK Utilisation
+## 🏗️ Lemma SDK Resources
 
 ### Tables (4)
 
 | Table | Purpose |
 |---|---|
-| `meetings` | Stores processed meeting records |
-| `tasks` | Action items — with blocked_reason, recurrence_count, is_recurring |
-| `team_members` | Team roster for owner resolution |
-| `decisions` | All decisions extracted from meetings — enables contradiction detection |
+| `meetings` | Stores processed meeting records with raw notes |
+| `tasks` | Action items with full audit trail — blocked_reason, recurrence_count, completion_verified, history |
+| `team_members` | Team roster for AI owner resolution |
+| `decisions` | All decisions across meetings — enables cross-meeting contradiction detection |
 
-### Agents (4)
+### Agents (5)
 
-| Agent | Purpose |
-|---|---|
-| `action-item-extractor` | Claude extracts tasks + decisions from transcript |
-| `followup-drafter` | Drafts Slack reminders for deadlines and blockers |
-| `contradiction-detector` | Compares new decisions vs. historical ones for conflicts |
-| `voice-note-transcriber` | Cleans Hinglish/informal voice notes into structured English |
+| Agent | Model | Purpose |
+|---|---|---|
+| `action-item-extractor` | claude-sonnet-4-6 | Extracts tasks, decisions, and follow-up meetings from transcript |
+| `followup-drafter` | claude-sonnet-4-6 | Drafts Slack/email reminders for deadlines and blockers |
+| `contradiction-detector` | claude-sonnet-4-6 | Compares new decisions vs. all historical ones for conflicts |
+| `voice-note-transcriber` | claude-sonnet-4-6 | Cleans Hinglish/informal voice notes into structured English |
+| `completion-verifier` | claude-sonnet-4-6 | Reviews task completion notes — prevents false "Done" signals |
 
 ### Workflows (4)
 
 | Workflow | Trigger | Purpose |
 |---|---|---|
-| `process-meeting` | Manual | Main extraction + contradiction check + approval pipeline |
-| `deadline-check` | Daily 8 AM | Scans for overdue tasks, sends reminders |
-| `blocker-check` | Daily 9 AM | Finds stuck in-progress tasks, drafts escalations |
-| `voice-note-intake` | Manual / WhatsApp webhook | Transcriber → process-meeting pipeline |
+| `process-meeting` | Manual | Main pipeline: extract → detect → validate → approve → persist |
+| `deadline-check` | `0 8 * * *` Daily 8 AM | Scans overdue tasks, drafts reminders |
+| `blocker-check` | `0 9 * * *` Daily 9 AM | Finds stuck in-progress tasks, drafts escalations |
+| `voice-note-intake` | Manual / Webhook | Transcriber → process-meeting pipeline |
+
+### Functions (3)
+
+| Function | Purpose |
+|---|---|
+| `parse_entities` | Resolves relative dates ("next Tuesday" → ISO date) + identifies team members |
+| `validate_tasks` | Splits tasks into valid vs. flagged — catches missing owner/deadline |
+| `create_task_records` | Commits approved tasks + decisions to DB; handles recurring task merging |
+
+### App (1)
+
+| App | Purpose |
+|---|---|
+| `apps/index.html` | Full-featured Kanban execution board — zero dependencies, single HTML file |
 
 ---
 
 ## 🚀 Feature Breakdown
 
 ### F1 — Contradiction Detector
-When new decisions are extracted from a meeting, the `contradiction-detector` agent compares them against **all historical decisions** stored in the `decisions` table. Conflicts surface in the review modal with severity rating and an "Override anyway" checkbox.
+When new decisions are extracted from a meeting, the `contradiction-detector` agent compares them against **all historical decisions** in the `decisions` table. Conflicts surface in the human review modal with:
+- Severity badge (HIGH / MEDIUM)
+- What the new decision says vs. what was previously decided
+- Which meeting the original decision came from
+- "Override anyway" checkbox to consciously accept the conflict
 
-**Demo**: Load "Sprint Review" (stores `"Going with 3-step flow"`) → then load "Board Call" (extracts `"Add verification step"`) → review modal shows ⚠️ conflict.
+**Demo:** Load "Sprint Review" → then "Board Call" → review modal shows ⚠️ conflict between "3-step flow" and "Add verification step."
+
+---
 
 ### F2 — Blocker Detection
-Tasks can be marked **Blocked** via status dropdown. Selecting "Blocked" opens an inline reason input. Blocked tasks get a 🔴 badge, red left border, and reason text on the card. The `blocker-check` workflow runs daily and escalates tasks stuck in-progress for 2+ days.
+Tasks can be marked **Blocked** via the status dropdown on any card. Selecting "Blocked" captures a free-text reason inline. Blocked tasks get:
+- 🔴 badge on the card
+- Red left border
+- Reason text displayed on the card
+- Auto-escalation via the daily `blocker-check` workflow (tasks stuck in-progress 2+ days)
 
-**Demo**: Open any in-progress task → status dropdown → "🔴 Blocked" → type reason → card updates live.
+**Demo:** Any in-progress card → dropdown → "🔴 Blocked" → type reason → card updates live.
+
+---
 
 ### F3 — Recurring Task Detector
-Before saving new tasks, a word-overlap similarity check (threshold 0.42) compares new task titles against existing active tasks. Matches are flagged in the review modal as 🔁 Recurring — the existing task's count increments rather than creating a duplicate. Tasks seen 3+ times are auto-escalated to HIGH priority.
+Before saving, new tasks are checked for word-overlap similarity (threshold 0.45) against all existing active tasks. Matches are flagged in the review modal as 🔁 Recurring:
+- Existing task's `recurrence_count` increments (no duplicate created)
+- Tasks seen 3+ times are auto-escalated to HIGH priority
+- Cards show "×3 across meetings" badge
 
-**Demo**: Process "Sprint Review" (creates onboarding email task) → then "Quick Standup" (extracts "update docs" for onboarding flow) → recurring section appears in modal.
-
-### F4 — WhatsApp / Voice Note Intake
-A new input section accepts informal Hinglish transcripts. The `voice-note-transcriber` agent (mocked in frontend) cleans them into structured English, pastes into the main textarea, and auto-triggers extraction. Future: WhatsApp Business API webhook integration.
-
-**Demo**: Paste `"arjun wala bug fix karna hai by friday, priya ko email bhejni hai before release"` → click Clean & Extract → cleaned English appears → extraction runs.
+**Demo:** Process "Sprint Review" → then "Quick Standup" → recurring section appears in review modal.
 
 ---
 
-## 📊 Insights Strip
+### F4 — WhatsApp / Hinglish Voice Note Intake
+A dedicated input accepts informal Hinglish transcripts. The `voice-note-transcriber` agent cleans them into structured English, pastes into the main textarea, and triggers extraction.
 
-A live-updating strip above the Kanban board shows:
+- Translates "arjun wala bug fix karna hai by friday" → "Arjun: Fix the bug by Friday."
+- Future: WhatsApp Business API webhook integration (endpoint defined in `voice_note_intake.yaml`)
+
+**Demo:** Paste Hinglish text → Clean & Extract → watch AI clean it → extraction auto-runs.
+
+---
+
+### F5 — Task Completion Guard
+When an employee marks a task Done, they must write a completion note (and optionally provide a link). The `completion-verifier` agent reviews the note:
+- **approved** — credibly demonstrates the task is done
+- **needs_more** — too vague ("done", "fixed it") — prompts for detail
+- **rejected** — describes a completely different task
+
+Tasks that are rejected 2+ times get escalated to the founder with 🚨 badge.
+
+---
+
+## 📊 Live Insights Strip
+
+A live-updating strip above the board shows real-time counts:
 
 ```
-| 📋 Tasks: 8 | 🔴 Blocked: 1 | 🔁 Recurring: 2 | 🏛 Decisions: 6 |
+| 📋 Tasks: 8 | 🔴 Blocked: 1 | 🔁 Recurring: 2 | 🏛 Decisions: 6 | ✅ Verified: 3/8 |
 ```
 
 ---
 
-## 📁 Pod Structure
+## 📁 Project Structure
 
 ```
 meeting-exec-pod/
 ├── agents/
-│   ├── extractor.yaml                # action-item-extractor agent
-│   ├── followup_drafter.yaml         # followup-drafter agent
-│   ├── contradiction_detector.yaml   # [NEW] contradiction detector agent
-│   └── transcriber.yaml              # [NEW] voice note transcriber agent
+│   ├── extractor.yaml               # action-item-extractor
+│   ├── followup_drafter.yaml        # followup-drafter
+│   ├── contradiction_detector.yaml  # contradiction-detector
+│   ├── transcriber.yaml             # voice-note-transcriber
+│   └── completion_verifier.yaml     # completion-verifier [NEW]
 ├── workflows/
-│   ├── process_meeting.yaml          # main pipeline (now includes contradiction check)
-│   ├── deadline_check.yaml           # daily deadline monitoring
-│   ├── blocker_check.yaml            # [NEW] daily blocker escalation
-│   └── voice_note_intake.yaml        # [NEW] voice note → process-meeting
+│   ├── process_meeting.yaml         # main human-in-the-loop pipeline
+│   ├── deadline_check.yaml          # daily 8 AM deadline reminders
+│   ├── blocker_check.yaml           # daily 9 AM blocker escalation
+│   └── voice_note_intake.yaml       # voice note → process-meeting
 ├── tables/
-│   ├── meetings.yaml                 # meetings table schema
-│   ├── tasks.yaml                    # tasks (+ blocked_reason, recurrence_count, etc.)
-│   ├── team_members.yaml             # team roster
-│   └── decisions.yaml                # [NEW] decisions table
+│   ├── meetings.yaml                # meeting records
+│   ├── tasks.yaml                   # tasks (all feature columns)
+│   ├── team_members.yaml            # team roster
+│   └── decisions.yaml               # decisions for contradiction detection
 ├── functions/
-│   ├── parse_entities.py             # date parsing
-│   ├── validate_tasks.py             # task validation
-│   └── create_task_records.py        # task persistence + recurring detection
+│   ├── parse_entities.py            # date + entity resolution
+│   ├── validate_tasks.py            # task validation
+│   └── create_task_records.py       # persistence + recurring detection
 ├── apps/
-│   ├── index.html                    # full frontend app (all 4 features)
-│   └── logo.png                      # app logo
-├── pod.json                          # Lemma pod definition (v2, 4+4+4 resources)
-└── run_meeting.py                    # Python SDK demo script
+│   ├── index.html                   # full Kanban app (single file, no deps)
+│   └── logo.png
+├── pod.json                         # Lemma pod definition (v2)
+├── deploy2.py                       # bundle + deploy script
+└── run_meeting.py                   # Python SDK demo script
 ```
 
 ---
 
-## 🛠️ Setup & Run
+## 🛠️ Setup & Deploy
 
 ### Prerequisites
 - [Lemma CLI](https://lemma.work) installed and authenticated
-- Anthropic API key configured (agent uses `claude-sonnet-4-6`)
+- Python 3.9+ with `pyyaml` (`pip install pyyaml`)
 
 ### 1. Authenticate
 ```bash
@@ -154,58 +202,76 @@ lemma auth login
 lemma org set 019f02d1-81b5-7705-97b1-12fc47ace383
 ```
 
-### 2. Verify deployed resources
+### 2. Deploy Everything (One Command)
 ```bash
-lemma table list      # should show: meetings, tasks, team_members, decisions
-lemma agent list      # should show: action-item-extractor, followup-drafter, contradiction-detector, voice-note-transcriber
-lemma workflow list   # should show: process-meeting, deadline-check, blocker-check, voice-note-intake
+python deploy2.py
 ```
 
-### 3. Open the app
+This bundles all tables, agents, workflows, functions, and the app into a single pod and runs:
+```bash
+lemma pod import my_bundle/meeting-exec-pod
 ```
-apps/index.html → open in Chrome
+
+### 3. Verify Deployed Resources
+```bash
+lemma table list
+# meetings, tasks, team_members, decisions
+
+lemma agent list
+# action-item-extractor, followup-drafter, contradiction-detector, voice-note-transcriber, completion-verifier
+
+lemma workflow list
+# process-meeting, deadline-check, blocker-check, voice-note-intake
 ```
-The app seeds demo data automatically on first load. Or press `⌘K` → "Seed Demo Data".
+
+### 4. Open the App
+Open `apps/index.html` in Chrome, or visit the deployed Lemma app URL.  
+The app seeds demo data automatically on first load. Or press `⌘K` → "Seed Demo Data."
 
 ---
 
-## 🎬 Demo Sequence
+## 🎬 Demo Sequence (2 Minutes)
 
-### Full 4-Feature Demo (2 minutes)
+| Step | Action | Feature Shown |
+|------|--------|---------------|
+| 1 | App loads → Sprint Review tasks appear on board | Kanban board, insights strip |
+| 2 | Paste Hinglish in WhatsApp box → Clean & Extract | F4: Voice Note Intake |
+| 3 | Process "Quick Standup" → see 🔁 in review modal | F3: Recurring Detection |
+| 4 | Process "Board Call" → see ⚠️ in review modal | F1: Contradiction Detector |
+| 5 | Mark a task Blocked → type reason | F2: Blocker Detection |
+| 6 | Mark a task Done → write completion note | F5: Completion Guard |
 
-1. **App loads** → seeded Sprint Review tasks appear on board. Insights strip shows "3 tasks · 0 blocked · 1 recurring · 3 decisions"
-
-2. **F4 Voice**: Paste `"arjun wala bug fix karna hai by friday, priya ko email bhejni hai before release"` in the WhatsApp section → **Clean & Extract** → watch AI clean it → extraction auto-starts
-
-3. **F3 Recurring**: Process "Quick Standup" → review modal shows 🔁 Recurring Tasks section for "update docs" matching existing onboarding task
-
-4. **F1 Contradiction**: Process "Board Call" → review modal shows ⚠️ Decision Conflicts section — "Add verification step" conflicts with stored "3-step flow" decision
-
-5. **F2 Blocker**: On any in-progress card → status dropdown → "🔴 Blocked" → type "Waiting on Auth0 support" → card shows red left border + BLOCKED badge + reason text
-
-6. **Insights strip** updates live throughout — showing blocked count and recurring count
+**Keyboard shortcuts:**
+- `1` `2` `3` — load transcripts
+- `Space` — extract tasks
+- `⌘K` / `Ctrl+K` — command palette
 
 ---
 
 ## 📝 Submission Rationale
 
 ### Problem (35%)
-Startups run 6–8 meetings weekly, but 80% of action items die in transcripts. Exec solves the execution gap: decisions get contradicted, blockers go invisible, recurring tasks accumulate silently. These are real, painful problems every startup founder recognizes.
+Startups run 6–8 meetings weekly. 80% of action items die in transcripts. Exec solves three compounding execution failures: contradicted decisions, invisible blockers, and recurring tasks nobody notices. These are real, painful problems every founder recognizes immediately.
 
 ### Solution (25%)
-Exec chains 4 Lemma agents in a human-in-the-loop workflow: extract → detect contradictions → validate → human review → persist. The frontend drives the demo fully in mock mode, identical to how the real Lemma API would behave. Voice notes are cleaned by the transcriber agent before entering the pipeline.
+Exec chains 5 Lemma agents in a human-in-the-loop workflow: transcribe → extract → detect contradictions → validate → human review → persist. The frontend is fully functional in mock mode (identical UX to the live Lemma API), so the demo works offline. The `completion-verifier` agent adds a new accountability layer that doesn't exist in any competing tool.
 
 ### Lemma SDK Utilisation (15%)
-4 Tables · 4 Agents · 4 Workflows · 1 App. The `decisions` table is a new Lemma resource created specifically to enable cross-meeting contradiction detection — a capability that only exists because Lemma persists structured agent output across workflow runs. The `blocker-check` workflow uses Lemma's scheduled trigger (`0 9 * * *`) and human approval step.
+**4 Tables · 5 Agents · 4 Workflows · 3 Functions · 1 App.**  
+The `decisions` table is a Lemma-native resource — it only exists because Lemma persists structured agent output across workflow runs. Cross-meeting contradiction detection is impossible without this. The `blocker-check` and `deadline-check` workflows use Lemma's scheduled triggers. The `process-meeting` workflow uses Lemma's human approval step to pause execution and surface data to the frontend.
 
 ### Design & UX
-- 4-column Kanban (To Do / In Progress / Blocked / Done)
-- Live insights strip with real-time counts
-- Conflict cards with severity badge and override checkbox
-- Recurring task panel with escalation badge
-- Inline blocker reason capture on cards
-- Hinglish voice note intake with animated cleaning
+- 4-column Kanban (To Do / In Progress / Blocked / Done) with horizontal scroll
+- Live insights strip updating across all 5 features
+- Inline blocker capture on cards
+- Task completion guard with AI verdict
+- Conflict cards with severity + override
+- Recurring panel with escalation badge
+- Hinglish voice note intake with animated AI cleaning
+- Command palette (`⌘K`) with keyboard shortcuts
+- Dark mode toggle
+- Notification system
 
 ---
 
-*Built with ❤️ using Lemma SDK · June 2025 · v2.0*
+*Built with ❤️ using Lemma SDK · July 2025 · v2.0*

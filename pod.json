@@ -15,7 +15,8 @@
       "agents/extractor.yaml",
       "agents/followup_drafter.yaml",
       "agents/contradiction_detector.yaml",
-      "agents/transcriber.yaml"
+      "agents/transcriber.yaml",
+      "agents/completion_verifier.yaml"
     ],
     "functions": [
       "functions/parse_entities.py",

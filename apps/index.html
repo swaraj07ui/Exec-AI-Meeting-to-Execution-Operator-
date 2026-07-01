@@ -169,7 +169,7 @@ textarea#hinglish::placeholder{color:var(--muted2)}
 .clean-btn:hover:not(:disabled){background:var(--blue);color:#fff;border-color:var(--blue)}
 .clean-btn:disabled{opacity:.45;cursor:not-allowed}
 /* Kanban */
-.kanban-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:18px}
+.kanban-grid{display:grid;grid-template-columns:repeat(4,minmax(260px,1fr));gap:18px;overflow-x:auto;padding-bottom:12px;scrollbar-width:thin;}
 .col{border-radius:var(--card-radius);overflow:hidden;background:var(--card-bg);backdrop-filter:var(--glass-blur);border:1px solid var(--glass-border);box-shadow:var(--card-shadow)}
 .col-head{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--border)}
 .col-head-left{display:flex;align-items:center;gap:8px}
@@ -199,7 +199,7 @@ textarea#hinglish::placeholder{color:var(--muted2)}
 .owner-avatar{width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#fff;flex-shrink:0}
 .dl-chip{font-size:10.5px;color:var(--muted);display:flex;align-items:center;gap:3px}
 .dl-chip.overdue{color:var(--red);font-weight:600}.dl-chip.today{color:var(--orange);font-weight:600}
-.task-card-foot{display:flex;align-items:center;justify-content:space-between;padding-top:8px;border-top:1px solid var(--border)}
+.task-card-foot{display:flex;align-items:center;justify-content:space-between;padding-top:8px;border-top:1px solid var(--border);flex-wrap:wrap;gap:8px}
 .status-select{background:var(--body-bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:11px;padding:3px 7px;cursor:pointer;font-family:inherit;transition:border .1s}
 .status-select:focus{outline:none;border-color:var(--blue)}
 .slack-btn{display:flex;align-items:center;gap:4px;background:none;border:1px solid #e0e0e0;border-radius:6px;color:#8B2FC9;font-size:10.5px;font-weight:600;padding:3px 8px;cursor:pointer;font-family:inherit;transition:all .15s}
@@ -591,7 +591,7 @@ body.sidebar-collapsed .topbar { left: 0; }
           </div>
         </div>
       </div>
-      <div id="rightPanel">
+      <div id="rightPanel" style="min-width: 0;">
         <div id="analyticsPanel"></div>
         <div id="pipelinePanel" style="display:none"></div>
         <div id="boardWrap">
@@ -1224,7 +1224,7 @@ function taskCardHTML(t,i){
         <option value="blocked"${t.status==='blocked'?' selected':''}>🔴 Blocked</option>
         <option value="done"${t.status==='done'?' selected':''}>Done</option>
       </select>
-      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end;flex:1">
         ${quickAction}
         <button class="slack-btn" onclick="toggleHistory('${t.id}')">🕒 History</button>
         <button class="slack-btn" onclick="showSlack('${t.id}')"><svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zm1.271 0a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313zm2.521-10.123a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834zm0 1.271a2.528 2.528 0 0 1 2.521 2.521 2.528 2.528 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312zm10.122 2.521a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.522V8.834zm-1.268 0a2.528 2.528 0 0 1-2.523 2.521 2.527 2.527 0 0 1-2.52-2.521V2.522A2.527 2.527 0 0 1 15.165 0a2.528 2.528 0 0 1 2.523 2.522v6.312zm-2.523 10.122a2.528 2.528 0 0 1 2.523 2.522A2.528 2.528 0 0 1 15.165 24a2.527 2.527 0 0 1-2.52-2.522v-2.522h2.52zm0-1.268a2.527 2.527 0 0 1-2.52-2.523 2.526 2.526 0 0 1 2.52-2.52h6.313A2.527 2.527 0 0 1 24 15.165a2.528 2.528 0 0 1-2.522 2.523h-6.313z"/></svg>Remind</button>
