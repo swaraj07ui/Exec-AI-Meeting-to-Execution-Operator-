@@ -629,6 +629,53 @@
         }
       },
       {
+        "name": "hinglish-cleaner",
+        "description": "Cleans raw Hinglish or code-switched meeting notes into clear English.",
+        "instruction": "You receive raw Hinglish or code-switched meeting notes. Your job is to output \nclean, grammatically correct English while preserving names, dates, and technical \nterms exactly as spoken.\n\nOutput strict JSON only, with no preamble or markdown wrapping.\n",
+        "model": "claude-sonnet-4-6",
+        "input_schema": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object"
+            }
+          ]
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "cleaned": {
+              "type": "string",
+              "description": "The translated and cleaned meeting notes in clear English."
+            }
+          }
+        }
+      },
+      {
+        "name": "recurring-checker",
+        "description": "Checks if two task titles describe the exact same underlying action item.",
+        "instruction": "You are an assistant checking for duplicate tasks. You receive two task descriptions.\nYour job is to determine if they represent the exact same underlying action/deliverable.\n\nExample of SAME:\n  - \"Fix the auth bug\" and \"Resolve authentication error\"\n  - \"Send email to investors\" and \"Email the investor update\"\n\nExample of DIFFERENT:\n  - \"Fix the auth bug\" and \"Fix the styling bug on login page\"\n  - \"Update onboarding docs\" and \"Update API docs\"\n\nOutput strict JSON only:\n{\n  \"is_same\": boolean\n}\n",
+        "model": "claude-3-haiku-20240307",
+        "input_schema": {
+          "task1": {
+            "type": "string"
+          },
+          "task2": {
+            "type": "string"
+          }
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "is_same": {
+              "type": "boolean"
+            }
+          }
+        }
+      },
+      {
         "name": "voice-note-transcriber",
         "description": "Cleans raw voice note transcripts \u2014 informal, fragmented, Hindi-English mixed (\"Hinglish\"), no timestamps \u2014 into structured meeting notes that the action-item-extractor agent can process. Preserves all commitments, deadlines, and decisions even if stated casually.\n",
         "role": "You are a meeting notes formatter specializing in Indian startup communication.\nYou receive raw WhatsApp voice note transcripts. These may be:\n  - Informal and fragmented\n  - Mixed Hindi-English (\"Hinglish\")\n  - Lacking punctuation or timestamps\n  - Using casual shorthand (e.g. \"kal tak\", \"EOD\", \"ASAP\")\n\nYour job: clean the transcript into structured English meeting notes that\npreserve every commitment, deadline, and decision \u2014 even casually stated ones.\n\nRules:\n  - Identify WHO is responsible for WHAT by WHEN\n  - Translate Hinglish phrases to English equivalents:\n      \"kal tak\" \u2192 \"by tomorrow\"\n      \"karna hai\" \u2192 \"needs to be done\"\n      \"bhejni hai\" \u2192 \"needs to send\"\n      \"wala\" \u2192 referring to (context-dependent)\n      \"abhi\" \u2192 \"right now / immediately\"\n      \"seedha\" \u2192 \"directly\"\n  - Output clean English meeting notes. NO JSON. Plain text only.\n  - Format: \"Person: Task by Deadline.\" \u2014 one line per task.\n  - If no deadline mentioned, omit the deadline clause.\n  - Preserve proper nouns (names, product names) as-is.\n\nExample input:\n  \"haan toh arjun wala bug fix karna hai by friday, aur priya ko email\n   bhejni hai before release, rahul investor ko deck bhejna hai next tuesday\"\n\nExample output:\n  \"Arjun: Fix the bug by Friday.\n   Priya: Send the email before the release date.\n   Rahul: Send the updated deck to the investor by next Tuesday.\"\n",

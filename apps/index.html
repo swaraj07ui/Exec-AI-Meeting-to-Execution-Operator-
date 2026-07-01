@@ -757,8 +757,7 @@ async function detectRecurring(newTasks){
     for(const {et, score} of candidates){
       try {
         const ctrl = new AbortController(); setTimeout(()=>ctrl.abort(), 3000);
-        const apiUrl = window.__LEMMA_CONFIG__ ? window.__LEMMA_CONFIG__.apiUrl : API;
-        const res = await fetch(`${apiUrl}/agents/recurring-checker/run`, {
+        const res = await fetch(`${API}/agents/recurring-checker/run`, {
           method: 'POST',
           signal: ctrl.signal,
           headers: {'Content-Type': 'application/json'},
@@ -801,8 +800,7 @@ async function startVoiceClean(){
   let cleaned = '';
   try {
     const ctrl=new AbortController();setTimeout(()=>ctrl.abort(),15000);
-    const apiUrl = window.__LEMMA_CONFIG__ ? window.__LEMMA_CONFIG__.apiUrl : API;
-    const res=await fetch(`${apiUrl}/agents/hinglish-cleaner/run`,{
+    const res=await fetch(`${API}/agents/hinglish-cleaner/run`,{
       method:'POST',
       signal:ctrl.signal,
       headers:{'Content-Type':'application/json'},
@@ -970,8 +968,7 @@ async function mockExtract(notes,key){
   let contradictions = [], clean = [];
   try {
     const ctrl=new AbortController();setTimeout(()=>ctrl.abort(),5000);
-    const apiUrl = window.__LEMMA_CONFIG__ ? window.__LEMMA_CONFIG__.apiUrl : API;
-    const res = await fetch(`${apiUrl}/agents/contradiction-detector/run`, {
+    const res = await fetch(`${API}/agents/contradiction-detector/run`, {
       method: 'POST',
       signal: ctrl.signal,
       headers: {'Content-Type': 'application/json'},
