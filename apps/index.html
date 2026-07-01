@@ -740,12 +740,43 @@ function wordOverlap(a,b){
   return wb.filter(w=>setA.has(w)).length/Math.max(wa.length,wb.length);
 }
 
-function detectRecurring(newTasks){
+async function detectRecurring(newTasks){
   const recurringFound=[],uniqueTasks=[];
   const active=tasks.filter(t=>t.status!=='done');
+  
   for(const nt of newTasks){
     let matched=null;
-    for(const et of active){if(wordOverlap(nt.title,et.title)>=0.42){matched=et;break;}}
+    
+    let candidates = [];
+    for(const et of active){
+      const score = wordOverlap(nt.title,et.title);
+      if(score >= 0.25) candidates.push({et, score});
+    }
+    candidates.sort((a,b) => b.score - a.score);
+    
+    for(const {et, score} of candidates){
+      try {
+        const ctrl = new AbortController(); setTimeout(()=>ctrl.abort(), 3000);
+        const apiUrl = window.__LEMMA_CONFIG__ ? window.__LEMMA_CONFIG__.apiUrl : API;
+        const res = await fetch(`${apiUrl}/agents/recurring-checker/run`, {
+          method: 'POST',
+          signal: ctrl.signal,
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            inputs: { task1: nt.title, task2: et.title }
+          })
+        });
+        if(!res.ok) throw new Error();
+        const data = await res.json();
+        const isSame = data.output.is_same;
+        console.log(`[Recurring Check] LIVE API compared: "${nt.title}" vs "${et.title}" -> ${isSame}`);
+        if(isSame) { matched = et; break; }
+      } catch (e) {
+        console.log(`[Recurring Check] LIVE API failed, using fallback >=0.42 for: "${nt.title}"`);
+        if(score >= 0.42) { matched = et; break; }
+      }
+    }
+    
     if(matched){
       matched.recurrence_count=(matched.recurrence_count||1)+1;
       matched.is_recurring=true;
@@ -931,7 +962,7 @@ async function mockExtract(notes,key){
   const val=validateTasks(data.tasks);
   const allTasks=[...val.valid_tasks,...val.flagged_tasks];
   // F3: Detect recurring BEFORE showing modal
-  const{recurringFound,uniqueTasks}=detectRecurring(allTasks);
+  const{recurringFound,uniqueTasks}=await detectRecurring(allTasks);
   const newVal=validateTasks(uniqueTasks);
   
   // F1: Detect contradictions

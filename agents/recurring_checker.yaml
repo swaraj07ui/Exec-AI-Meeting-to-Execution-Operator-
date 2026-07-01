@@ -1,0 +1,33 @@
+name: recurring-checker
+description: Checks if two task titles describe the exact same underlying action item.
+
+instruction: |
+  You are an assistant checking for duplicate tasks. You receive two task descriptions.
+  Your job is to determine if they represent the exact same underlying action/deliverable.
+  
+  Example of SAME:
+    - "Fix the auth bug" and "Resolve authentication error"
+    - "Send email to investors" and "Email the investor update"
+  
+  Example of DIFFERENT:
+    - "Fix the auth bug" and "Fix the styling bug on login page"
+    - "Update onboarding docs" and "Update API docs"
+  
+  Output strict JSON only:
+  {
+    "is_same": boolean
+  }
+
+model: claude-3-haiku-20240307
+
+input_schema:
+  task1:
+    type: string
+  task2:
+    type: string
+
+output_schema:
+  type: object
+  properties:
+    is_same:
+      type: boolean
