@@ -1051,8 +1051,9 @@ function showReviewModal(data,title,runId){
       return`<div class="modal-task${fl?' flagged':''}" id="mt-${t._idx}"><div class="task-status-dot ${fl?'flagged':'valid'}"></div><div class="modal-task-info"><div class="modal-task-title">${t.title}</div><div class="modal-chips">${chips}</div>${flagHtml}</div><button class="dismiss-btn" onclick="dismissTask(${t._idx})" title="Remove">×</button></div>`;
     }).join('')||'<div style="text-align:center;color:var(--muted);padding:20px;font-size:13px">All tasks dismissed.</div>';
     const c=live.length;
+    const hasFlags = live.some(t => t._flags && t._flags.length > 0);
     document.getElementById('modalConfirmBtn').textContent=`✓ Confirm ${c} Task${c!==1?'s':''}`;
-    document.getElementById('modalConfirmBtn').disabled=c===0;
+    document.getElementById('modalConfirmBtn').disabled=hasFlags;
     renderBanner(ts);
   }
   window.fixField=el=>{const t=ts.find(x=>x._idx===+el.dataset.idx);if(!t)return;t[el.dataset.field]=el.value;t._flags=t._flags.filter(f=>!(f==='NO_OWNER'&&el.dataset.field==='owner'&&el.value)&&!(f==='NO_DEADLINE'&&el.dataset.field==='deadline'&&el.value));render();};
