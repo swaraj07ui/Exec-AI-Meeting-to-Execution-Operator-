@@ -1,8 +1,60 @@
 {
   "format_version": 2,
   "name": "meeting-exec-pod",
+  "description": "Turns meeting transcripts into tracked action items with AI agents",
   "contents": {
     "tables": [
+      {
+        "name": "decisions",
+        "description": "Decisions made in meetings. Used by the contradiction_detector agent to surface logical conflicts between new decisions and historical ones.\n",
+        "columns": [
+          {
+            "name": "id",
+            "type": "text",
+            "auto": true,
+            "primary": true,
+            "description": "UUID generated at creation"
+          },
+          {
+            "name": "text",
+            "type": "text",
+            "description": "Full text of the decision as extracted by the AI agent"
+          },
+          {
+            "name": "meeting_id",
+            "type": "text",
+            "description": "References meetings.id this decision came from",
+            "foreign_key": "meetings.id",
+            "nullable": true
+          },
+          {
+            "name": "meeting_title",
+            "type": "text",
+            "description": "Denormalized meeting title for quick display",
+            "nullable": true
+          },
+          {
+            "name": "created_at",
+            "type": "timestamp",
+            "auto": "created_at",
+            "description": "When this decision was recorded"
+          }
+        ],
+        "indexes": [
+          {
+            "columns": [
+              "meeting_id"
+            ],
+            "description": "For filtering decisions by meeting"
+          },
+          {
+            "columns": [
+              "created_at"
+            ],
+            "description": "For chronological ordering in contradiction checks"
+          }
+        ]
+      },
       {
         "name": "meetings",
         "description": "Log of processed meeting transcripts with aggregated counts.",
@@ -83,6 +135,8 @@
             "enum": [
               "todo",
               "in_progress",
+              "blocked",
+              "pending_approval",
               "done",
               "overdue"
             ],
@@ -124,6 +178,91 @@
             "type": "boolean",
             "default": false,
             "description": "Whether a deadline reminder has been dispatched"
+          },
+          {
+            "name": "blocked_reason",
+            "type": "text",
+            "nullable": true,
+            "description": "Free-text explanation of what is blocking this task"
+          },
+          {
+            "name": "blocked_at",
+            "type": "timestamp",
+            "nullable": true,
+            "description": "When the blocker was reported"
+          },
+          {
+            "name": "escalated",
+            "type": "boolean",
+            "default": false,
+            "description": "Whether a blocker escalation reminder has been sent"
+          },
+          {
+            "name": "recurrence_count",
+            "type": "integer",
+            "default": 1,
+            "description": "How many times this task (or a similar one) has appeared across meetings"
+          },
+          {
+            "name": "first_seen_meeting_id",
+            "type": "text",
+            "nullable": true,
+            "description": "The meeting_id where this task was first created",
+            "foreign_key": "meetings.id"
+          },
+          {
+            "name": "is_recurring",
+            "type": "boolean",
+            "default": false,
+            "description": "True if this task was detected as a duplicate of an existing task"
+          },
+          {
+            "name": "completion_note",
+            "type": "text",
+            "nullable": true,
+            "description": "Employee-written description of what was actually done to complete the task"
+          },
+          {
+            "name": "completion_evidence",
+            "type": "text",
+            "nullable": true,
+            "description": "Link to PR, Notion doc, Loom recording, or screenshot proving completion"
+          },
+          {
+            "name": "completion_verified",
+            "type": "boolean",
+            "default": false,
+            "description": "True if the AI verifier (completion-verifier agent) approved the completion note"
+          },
+          {
+            "name": "completed_at",
+            "type": "timestamp",
+            "nullable": true,
+            "description": "When the task was marked done after passing verification"
+          },
+          {
+            "name": "rejected_count",
+            "type": "integer",
+            "default": 0,
+            "description": "Number of times the employee tried to mark done but was rejected by AI or founder"
+          },
+          {
+            "name": "cg_escalated",
+            "type": "boolean",
+            "default": false,
+            "description": "True if this task was escalated due to repeated completion rejections (rejected_count >= 2)"
+          },
+          {
+            "name": "blocked_by",
+            "type": "json",
+            "nullable": true,
+            "description": "Array of task IDs that must be completed before this task can be started or marked done."
+          },
+          {
+            "name": "history",
+            "type": "json",
+            "nullable": true,
+            "description": "Audit trail of state changes. Array of objects {status, timestamp, by, note}"
           }
         ],
         "indexes": [
@@ -145,6 +284,33 @@
               "owner"
             ],
             "description": "For per-person followup queries"
+          },
+          {
+            "columns": [
+              "is_recurring",
+              "recurrence_count"
+            ],
+            "description": "For recurring task reports"
+          },
+          {
+            "columns": [
+              "escalated",
+              "status"
+            ],
+            "description": "For blocker escalation queries"
+          },
+          {
+            "columns": [
+              "completion_verified",
+              "status"
+            ],
+            "description": "For verified completion stats in insights bar"
+          },
+          {
+            "columns": [
+              "rejected_count"
+            ],
+            "description": "For finding disputed tasks needing founder attention"
           }
         ]
       },
@@ -200,9 +366,152 @@
     ],
     "agents": [
       {
+        "name": "completion-verifier",
+        "description": "Reviews a task completion note written by an employee and decides whether it credibly demonstrates the task was actually finished. Prevents \"click Done and walk away\" from reaching the founder as false signal.\n",
+        "role": "You are a strict but fair task completion reviewer for a startup execution system.\n\nYou receive:\n  - task_title: what the task was\n  - task_priority: high | medium | low\n  - deadline: ISO date the task was due\n  - days_overdue: positive = overdue, negative = early\n  - completion_note: what the employee wrote about what they did\n  - evidence_link: PR / Notion doc / Loom URL (may be empty)\n\nYour job: decide if this completion note CREDIBLY demonstrates the task is done.\n\nA note is INSUFFICIENT (verdict: \"needs_more\") if:\n  - It's vague: \"done\", \"fixed it\", \"completed\", \"all good\", \"ok\", \"finished\"\n  - It doesn't mention WHAT specifically was changed, fixed, or delivered\n  - It contradicts the task (task: fix auth bug \u2192 note: \"updated docs\")\n  - The note is under 30 words with no technical specifics\n  - Priority is \"high\" AND no evidence_link provided AND note has no technical detail\n\nA note is REJECTED (verdict: \"rejected\") if:\n  - The completion note describes a DIFFERENT task entirely\n  - The note actively contradicts the task (task: \"ship feature X\", note: \"I decided not to do X\")\n  - The employee is claiming done for something that logically can't be done yet\n\nA note is APPROVED (verdict: \"approved\") if:\n  - It clearly describes what action was taken\n  - It mentions the outcome or result (e.g. \"tested with 3 clients\", \"PR merged\", \"doc published\")\n  - High priority tasks: evidence_link provided OR note is detailed and technical (30+ words)\n\nOutput STRICT JSON only, no preamble, no markdown fences:\n{\n  \"verdict\": \"approved\" | \"needs_more\" | \"rejected\",\n  \"reason\": \"one sentence explaining the verdict\",\n  \"suggestion\": \"specific, actionable thing to add (only when needs_more or rejected)\",\n  \"confidence\": 0.0-1.0\n}\n\nExamples:\n  Task: \"Fix auth bug\" | Note: \"fixed\" \u2192 needs_more (too vague)\n  Task: \"Fix auth bug\" | Note: \"Resolved Auth0 callback URL mismatch. Updated in dashboard and tested login with 3 enterprise accounts.\" \u2192 approved\n  Task: \"Fix auth bug\" | Note: \"Updated the landing page copy\" \u2192 rejected (wrong task)\n  Task: \"Write proposal\" | Note: \"Wrote the proposal\" \u2192 needs_more (no outcome described)\n  Task: \"Write proposal\" | Note: \"Drafted 3-page proposal, sent to client via email, awaiting response.\" \u2192 approved\n",
+        "model": "claude-sonnet-4-6",
+        "grants": [
+          {
+            "resource": "tables/tasks",
+            "access": "read"
+          }
+        ],
+        "input_schema": {
+          "task_title": {
+            "type": "string",
+            "description": "The task that was supposedly completed"
+          },
+          "task_priority": {
+            "type": "string",
+            "enum": [
+              "high",
+              "medium",
+              "low"
+            ]
+          },
+          "deadline": {
+            "type": "string",
+            "description": "ISO date the task was due",
+            "nullable": true
+          },
+          "days_overdue": {
+            "type": "number",
+            "description": "Positive = overdue, negative = early"
+          },
+          "completion_note": {
+            "type": "string",
+            "description": "Employee-written description of what was done"
+          },
+          "evidence_link": {
+            "type": "string",
+            "description": "Optional PR link, Notion doc, Loom URL",
+            "nullable": true
+          }
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "verdict": {
+              "type": "string",
+              "enum": [
+                "approved",
+                "needs_more",
+                "rejected"
+              ]
+            },
+            "reason": {
+              "type": "string"
+            },
+            "suggestion": {
+              "type": "string",
+              "nullable": true
+            },
+            "confidence": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          }
+        }
+      },
+      {
+        "name": "contradiction-detector",
+        "description": "Receives new decisions just extracted from a meeting and existing decisions from the decisions table. Identifies logical conflicts \u2014 cases where two decisions are on the same topic but point in opposite directions.\n",
+        "role": "You are a decision consistency analyst for a startup execution system.\nYou receive two inputs:\n  - new_decisions: list of decision strings just extracted from today's meeting\n  - existing_decisions: list of {text, meeting_title, created_at} from past meetings\n\nYour job: compare EVERY new decision against EVERY existing one.\nA contradiction is when two decisions are logically incompatible on the same topic.\nExamples:\n  - \"Going with 3-step onboarding flow\" vs \"Add a verification step before payment\" \u2192 CONFLICT\n  - \"Cut marketing spend 30%\" vs \"Increase marketing investment\" \u2192 CONFLICT\n  - \"No backend changes needed\" vs \"We need backend API changes for this feature\" \u2192 CONFLICT\nNon-examples (NOT conflicts):\n  - \"Ship by July 10th\" vs \"Ship mobile app by August\" \u2192 different products\n  - \"Hire 2 AEs\" vs \"Hire a designer\" \u2192 different roles, no conflict\n\nOutput STRICT JSON only, no preamble, no markdown:\n{\n  \"contradictions\": [\n    {\n      \"new_decision\": \"...\",\n      \"conflicts_with\": \"...\",\n      \"from_meeting\": \"...\",\n      \"severity\": \"high|medium\"\n    }\n  ],\n  \"clean\": [\"decisions with no conflicts\"]\n}\n\nSeverity guide:\n  - \"high\": directly blocks execution or reverses a shipped decision\n  - \"medium\": creates confusion or rework but not an immediate blocker\n",
+        "model": "claude-sonnet-4-6",
+        "grants": [
+          {
+            "resource": "tables/decisions",
+            "access": "read"
+          }
+        ],
+        "input_schema": {
+          "new_decisions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Decisions just extracted from the current meeting"
+          },
+          "existing_decisions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string"
+                },
+                "meeting_title": {
+                  "type": "string"
+                },
+                "created_at": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "All historical decisions from the decisions table"
+          }
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "contradictions": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "new_decision": {
+                    "type": "string"
+                  },
+                  "conflicts_with": {
+                    "type": "string"
+                  },
+                  "from_meeting": {
+                    "type": "string"
+                  },
+                  "severity": {
+                    "type": "string",
+                    "enum": [
+                      "high",
+                      "medium"
+                    ]
+                  }
+                }
+              }
+            },
+            "clean": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      {
         "name": "action-item-extractor",
         "description": "Extracts every action item, decision, and follow-up meeting from raw meeting notes or timestamped transcripts. Outputs structured JSON ready for validation.\n",
-        "role": "You are a meeting execution assistant. You receive raw meeting notes (may be\ntranscripts with timestamps or clean notes). You also receive a list of team\nmembers and pre-resolved dates. Your job:\n\n1. Extract EVERY action item, commitment, and \"to-do\" from the notes. If\n   something sounds like work someone needs to do, it IS a task \u00e2\u20ac\u201d even if\n   stated casually.\n2. Extract every DECISION made (use a separate \"decisions\" array).\n3. Extract any scheduled FOLLOW-UP MEETINGS.\n\nFor EACH action item, output:\n- title: Short, imperative task title (e.g. \"Finalize Figma files and hand off to engineering\")\n- description: One sentence of context\n- owner: EXACT name from the team members list. If unclear, use \"UNASSIGNED\"\n- deadline: ISO date string (YYYY-MM-DD). Use the resolved_dates map provided.\n  If no deadline found, use \"NO_DEADLINE\"\n- priority: \"high\" (blocking, revenue-impacting, or from leadership),\n  \"medium\" (normal sprint work), \"low\" (nice to have, vague)\n\nOutput STRICT JSON with no preamble, no markdown fences, no commentary:\n{\n  \"tasks\": [\n    {\n      \"title\": \"...\",\n      \"description\": \"...\",\n      \"owner\": \"...\",\n      \"deadline\": \"...\",\n      \"priority\": \"...\"\n    }\n  ],\n  \"decisions\": [\"...\", \"...\"],\n  \"follow_up_meetings\": [\"...\"]\n}\n",
+        "role": "You are a meeting execution assistant. You receive raw meeting notes (may be\ntranscripts with timestamps or clean notes). You also receive a list of team\nmembers and pre-resolved dates. Your job:\n\n1. Extract EVERY action item, commitment, and \"to-do\" from the notes. If\n   something sounds like work someone needs to do, it IS a task \u2014 even if\n   stated casually.\n2. Extract every DECISION made (use a separate \"decisions\" array).\n3. Extract any scheduled FOLLOW-UP MEETINGS.\n\nFor EACH action item, output:\n- title: Short, imperative task title (e.g. \"Finalize Figma files and hand off to engineering\")\n- description: One sentence of context\n- owner: EXACT name from the team members list. If unclear, use \"UNASSIGNED\"\n- deadline: ISO date string (YYYY-MM-DD). Use the resolved_dates map provided.\n  If no deadline found, use \"NO_DEADLINE\"\n- priority: \"high\" (blocking, revenue-impacting, or from leadership),\n  \"medium\" (normal sprint work), \"low\" (nice to have, vague)\n\nOutput STRICT JSON with no preamble, no markdown fences, no commentary:\n{\n  \"tasks\": [\n    {\n      \"title\": \"...\",\n      \"description\": \"...\",\n      \"owner\": \"...\",\n      \"deadline\": \"...\",\n      \"priority\": \"...\"\n    }\n  ],\n  \"decisions\": [\"...\", \"...\"],\n  \"follow_up_meetings\": [\"...\"]\n}\n",
         "model": "claude-sonnet-4-6",
         "grants": [
           {
@@ -220,7 +529,7 @@
         ],
         "input_schema": {
           "notes_text": {
-            "type": "text",
+            "type": "string",
             "description": "Raw transcript or meeting notes to process"
           },
           "team_members": {
@@ -229,10 +538,10 @@
               "type": "object",
               "properties": {
                 "name": {
-                  "type": "text"
+                  "type": "string"
                 },
                 "role": {
-                  "type": "text"
+                  "type": "string"
                 }
               }
             },
@@ -252,13 +561,13 @@
             "decisions": {
               "type": "array",
               "items": {
-                "type": "text"
+                "type": "string"
               }
             },
             "follow_up_meetings": {
               "type": "array",
               "items": {
-                "type": "text"
+                "type": "string"
               }
             }
           }
@@ -267,7 +576,7 @@
       {
         "name": "followup-drafter",
         "description": "Writes short, friendly Slack reminders for upcoming task deadlines. Tone: casual peer-to-peer, not corporate.\n",
-        "role": "You write short, friendly Slack messages reminding a team member about an\nupcoming task deadline. Keep it to 2-3 sentences. Mention the task, the\ndeadline, and ask if they need help. Do NOT be formal. Do NOT use corporate\njargon. Write like a colleague, not a manager.\n\nInput will include the task details and the owner's name. Output ONLY the\nmessage body \u00e2\u20ac\u201d no subject line, no \"Hi [name]:\" salutation, just the message.\n",
+        "role": "You write short, friendly Slack messages reminding a team member about an\nupcoming task deadline. Keep it to 2-3 sentences. Mention the task, the\ndeadline, and ask if they need help. Do NOT be formal. Do NOT use corporate\njargon. Write like a colleague, not a manager.\n\nInput will include the task details and the owner's name. Output ONLY the\nmessage body \u2014 no subject line, no \"Hi [name]:\" salutation, just the message.\n",
         "model": "claude-sonnet-4-6",
         "grants": [
           {
@@ -284,16 +593,16 @@
             "type": "object",
             "properties": {
               "title": {
-                "type": "text"
+                "type": "string"
               },
               "description": {
-                "type": "text"
+                "type": "string"
               },
               "deadline": {
-                "type": "text"
+                "type": "string"
               },
               "priority": {
-                "type": "text"
+                "type": "string"
               }
             },
             "description": "Task record to generate reminder for"
@@ -302,25 +611,127 @@
             "type": "object",
             "properties": {
               "name": {
-                "type": "text"
+                "type": "string"
               },
               "role": {
-                "type": "text"
+                "type": "string"
               },
               "email": {
-                "type": "text"
+                "type": "string"
               }
             },
             "description": "Team member who owns this task"
           }
         },
         "output_schema": {
-          "type": "text",
+          "type": "string",
           "description": "The Slack message body, 2-3 sentences, casual tone"
+        }
+      },
+      {
+        "name": "voice-note-transcriber",
+        "description": "Cleans raw voice note transcripts \u2014 informal, fragmented, Hindi-English mixed (\"Hinglish\"), no timestamps \u2014 into structured meeting notes that the action-item-extractor agent can process. Preserves all commitments, deadlines, and decisions even if stated casually.\n",
+        "role": "You are a meeting notes formatter specializing in Indian startup communication.\nYou receive raw WhatsApp voice note transcripts. These may be:\n  - Informal and fragmented\n  - Mixed Hindi-English (\"Hinglish\")\n  - Lacking punctuation or timestamps\n  - Using casual shorthand (e.g. \"kal tak\", \"EOD\", \"ASAP\")\n\nYour job: clean the transcript into structured English meeting notes that\npreserve every commitment, deadline, and decision \u2014 even casually stated ones.\n\nRules:\n  - Identify WHO is responsible for WHAT by WHEN\n  - Translate Hinglish phrases to English equivalents:\n      \"kal tak\" \u2192 \"by tomorrow\"\n      \"karna hai\" \u2192 \"needs to be done\"\n      \"bhejni hai\" \u2192 \"needs to send\"\n      \"wala\" \u2192 referring to (context-dependent)\n      \"abhi\" \u2192 \"right now / immediately\"\n      \"seedha\" \u2192 \"directly\"\n  - Output clean English meeting notes. NO JSON. Plain text only.\n  - Format: \"Person: Task by Deadline.\" \u2014 one line per task.\n  - If no deadline mentioned, omit the deadline clause.\n  - Preserve proper nouns (names, product names) as-is.\n\nExample input:\n  \"haan toh arjun wala bug fix karna hai by friday, aur priya ko email\n   bhejni hai before release, rahul investor ko deck bhejna hai next tuesday\"\n\nExample output:\n  \"Arjun: Fix the bug by Friday.\n   Priya: Send the email before the release date.\n   Rahul: Send the updated deck to the investor by next Tuesday.\"\n",
+        "model": "claude-sonnet-4-6",
+        "grants": [],
+        "input_schema": {
+          "raw_transcript": {
+            "type": "string",
+            "description": "Raw voice note text \u2014 may be Hinglish, informal, fragmented"
+          }
+        },
+        "output_schema": {
+          "type": "string",
+          "description": "Cleaned, structured English meeting notes ready for extraction"
         }
       }
     ],
     "workflows": [
+      {
+        "name": "blocker-check",
+        "description": "Daily workflow that identifies tasks stuck in \"in_progress\" for more than 2 days without escalation, drafts a reminder message via the followup-drafter agent, and requests human approval before sending.\n",
+        "trigger": {
+          "schedule": "0 9 * * *"
+        },
+        "steps": [
+          {
+            "id": "find_stuck",
+            "type": "function",
+            "function": "query_table",
+            "description": "Find tasks stuck in progress for more than 2 days, not yet escalated",
+            "input": {
+              "table": "tasks",
+              "filters": {
+                "status": "in_progress",
+                "escalated": false
+              },
+              "where_raw": "created_at < now() - interval '2 days'"
+            }
+          },
+          {
+            "id": "draft_messages",
+            "type": "loop",
+            "description": "For each stuck task, draft a follow-up reminder message",
+            "over": "{{ steps.find_stuck.output.rows }}",
+            "as": "task",
+            "steps": [
+              {
+                "id": "draft_message",
+                "type": "agent",
+                "agent": "followup-drafter",
+                "description": "Draft a reminder message asking about status and blockers",
+                "input": {
+                  "task_title": "{{ task.title }}",
+                  "owner": "{{ task.owner }}",
+                  "deadline": "{{ task.deadline }}",
+                  "days_stuck": "{{ (now() - task.created_at).days }}",
+                  "message_type": "blocker_check",
+                  "context": "This task has been in progress for {{ (now() - task.created_at).days }} days. We want to check if the owner is blocked or needs help.\n"
+                }
+              }
+            ]
+          },
+          {
+            "id": "approve_send",
+            "type": "approval",
+            "title": "Stuck Task Escalation \u2014 {{ steps.find_stuck.output.rows | length }} task(s)",
+            "description": "Review drafted reminder messages before sending. Select which tasks to escalate and which to skip.\n",
+            "data": {
+              "stuck_tasks": "{{ steps.find_stuck.output.rows }}",
+              "drafted_messages": "{{ steps.draft_messages.output }}"
+            },
+            "options": [
+              {
+                "label": "Send reminder",
+                "value": "send"
+              },
+              {
+                "label": "Skip this task",
+                "value": "skip"
+              }
+            ]
+          },
+          {
+            "id": "mark_escalated",
+            "type": "function",
+            "function": "update_task_records",
+            "description": "Mark approved tasks as escalated to prevent re-sending next day",
+            "depends_on": [
+              "approve_send"
+            ],
+            "input": {
+              "task_ids": "{{ steps.approve_send.approved_task_ids }}",
+              "updates": {
+                "escalated": true
+              }
+            }
+          }
+        ],
+        "output": {
+          "escalated_count": "{{ steps.mark_escalated.output.updated_count }}",
+          "skipped_count": "{{ steps.approve_send.skipped_count }}"
+        }
+      },
       {
         "name": "deadline-check",
         "description": "Daily job: find tasks due tomorrow or overdue where no follow-up has been sent, draft Slack reminders via AI, get human approval, then mark sent.\n",
@@ -386,7 +797,7 @@
                 "id": "approve_followup",
                 "type": "approval",
                 "title": "Send reminder to {{ task.owner }}?",
-                "description": "Task: '{{ task.title }}' \u00e2\u20ac\u201d due {{ task.deadline }}",
+                "description": "Task: '{{ task.title }}' \u2014 due {{ task.deadline }}",
                 "data": {
                   "task": "{{ task }}",
                   "owner": "{{ steps.draft_followups.get_owner.output }}",
@@ -423,16 +834,16 @@
       },
       {
         "name": "process-meeting",
-        "description": "End-to-end pipeline: transcript \u00e2\u2020\u2019 parsed entities \u00e2\u2020\u2019 AI extraction \u00e2\u2020\u2019 validation \u00e2\u2020\u2019 human review \u00e2\u2020\u2019 committed task records.\n",
+        "description": "End-to-end pipeline: transcript \u2192 parsed entities \u2192 AI extraction \u2192 contradiction check \u2192 recurring task detection \u2192 validation \u2192 human review \u2192 committed task + decision records.\n",
         "trigger": "manual",
         "inputs": {
           "notes_text": {
-            "type": "text",
+            "type": "string",
             "required": true,
             "description": "Raw meeting transcript or notes to process"
           },
           "meeting_title": {
-            "type": "text",
+            "type": "string",
             "required": false,
             "default": "Untitled Meeting",
             "description": "Human-readable title for the meeting record"
@@ -461,6 +872,16 @@
             }
           },
           {
+            "id": "check_contradictions",
+            "type": "agent",
+            "agent": "contradiction-detector",
+            "description": "Compare newly extracted decisions against all historical decisions",
+            "input": {
+              "new_decisions": "{{ steps.extract.output.decisions }}",
+              "existing_decisions": "{{ tables.decisions | select('text', 'meeting_title', 'created_at') }}"
+            }
+          },
+          {
             "id": "validate",
             "type": "function",
             "function": "validate_tasks",
@@ -473,16 +894,18 @@
             "id": "human_review",
             "type": "approval",
             "title": "Review Extracted Tasks",
-            "description": "Found {{ steps.validate.output.total }} tasks. {{ steps.validate.output.needs_attention }} need your attention.\n",
+            "description": "Found {{ steps.validate.output.total }} tasks. {{ steps.validate.output.needs_attention }} need your attention. {{ steps.check_contradictions.output.contradictions | length }} decision conflict(s) detected.\n",
             "data": {
               "valid_tasks": "{{ steps.validate.output.valid_tasks }}",
               "flagged_tasks": "{{ steps.validate.output.flagged_tasks }}",
               "decisions": "{{ steps.extract.output.decisions }}",
+              "contradictions": "{{ steps.check_contradictions.output.contradictions }}",
               "follow_up_meetings": "{{ steps.extract.output.follow_up_meetings }}",
               "stats": {
                 "total": "{{ steps.validate.output.total }}",
                 "ready_count": "{{ steps.validate.output.ready_count }}",
-                "needs_attention": "{{ steps.validate.output.needs_attention }}"
+                "needs_attention": "{{ steps.validate.output.needs_attention }}",
+                "contradiction_count": "{{ steps.check_contradictions.output.contradictions | length }}"
               }
             }
           },
@@ -490,7 +913,7 @@
             "id": "create_records",
             "type": "function",
             "function": "create_task_records",
-            "description": "Commit approved tasks and meeting record to database",
+            "description": "Commit approved tasks, decisions, and meeting record to database",
             "depends_on": [
               "human_review"
             ],
@@ -498,18 +921,97 @@
               "approved_tasks": "{{ steps.human_review.approved_tasks }}",
               "meeting_title": "{{ inputs.meeting_title }}",
               "raw_notes": "{{ inputs.notes_text }}",
-              "decisions": "{{ steps.extract.output.decisions }}"
+              "decisions": "{{ steps.extract.output.decisions }}",
+              "overridden_contradictions": "{{ steps.human_review.overridden_contradictions }}"
             }
           }
         ],
         "output": {
           "meeting_id": "{{ steps.create_records.output.meeting_id }}",
           "task_count": "{{ steps.create_records.output.task_count }}",
-          "task_ids": "{{ steps.create_records.output.task_ids }}"
+          "task_ids": "{{ steps.create_records.output.task_ids }}",
+          "decision_count": "{{ steps.create_records.output.decision_count }}"
+        }
+      },
+      {
+        "name": "voice-note-intake",
+        "description": "Processes a raw WhatsApp voice note transcript (Hinglish OK) through the voice-note-transcriber agent to clean it up, then feeds the cleaned notes into the full process-meeting workflow. Supports manual trigger and future WhatsApp webhook integration.\n",
+        "trigger": [
+          "manual",
+          {
+            "webhook": {
+              "path": "/webhooks/whatsapp-voice",
+              "method": "POST",
+              "auth": "bearer",
+              "description": "Future: WhatsApp Business API can POST voice note transcriptions here. Payload: { \"from\": \"+91XXXXXXXXXX\", \"transcript\": \"...\" }\n"
+            }
+          }
+        ],
+        "inputs": {
+          "raw_transcript": {
+            "type": "string",
+            "required": true,
+            "description": "Raw voice note text \u2014 Hinglish or informal English OK"
+          },
+          "meeting_title": {
+            "type": "string",
+            "required": false,
+            "default": "WhatsApp Voice Note",
+            "description": "Human-readable meeting title"
+          },
+          "sender": {
+            "type": "string",
+            "required": false,
+            "description": "WhatsApp sender name or phone (for context)"
+          }
+        },
+        "steps": [
+          {
+            "id": "transcribe",
+            "type": "agent",
+            "agent": "voice-note-transcriber",
+            "description": "Clean and structure the raw Hinglish voice note transcript",
+            "input": {
+              "raw_transcript": "{{ inputs.raw_transcript }}"
+            }
+          },
+          {
+            "id": "process",
+            "type": "workflow",
+            "workflow": "process-meeting",
+            "description": "Feed the cleaned transcript into the full extraction pipeline \u2014 reusing parse_entities \u2192 extract \u2192 validate \u2192 human_review \u2192 create_records\n",
+            "input": {
+              "notes_text": "{{ steps.transcribe.output }}",
+              "meeting_title": "{{ inputs.meeting_title }}"
+            }
+          }
+        ],
+        "output": {
+          "cleaned_transcript": "{{ steps.transcribe.output }}",
+          "meeting_id": "{{ steps.process.output.meeting_id }}",
+          "task_count": "{{ steps.process.output.task_count }}"
         }
       }
     ],
-    "functions": [],
-    "apps": []
+    "functions": [
+      {
+        "name": "create_task_records",
+        "source": "\"\"\"\ncreate_task_records.py\n\nCommits approved tasks to the tasks table, decisions to the decisions table,\nand creates a meeting record. Called after human approval step in process_meeting workflow.\n\nInput:\n  approved_tasks (list[dict]): Human-reviewed and approved task objects\n  meeting_title (str): Title of the source meeting\n  raw_notes (str): Original meeting notes/transcript\n  decisions (list[str]): Decisions extracted from the meeting\n\nOutput:\n  {\n    \"meeting_id\": str,\n    \"task_ids\": list[str],\n    \"task_count\": int,\n    \"decision_count\": int,\n    \"recurring_count\": int,\n  }\n\nNote: actual DB writes handled by Lemma runtime via `db` context injected at\nexecution time. This module defines the transformation logic; the runtime\nhandles persistence. In mock mode, the frontend handles this locally.\n\"\"\"\n\nimport uuid\nfrom datetime import datetime, timezone\n\n\ndef _word_overlap(title_a: str, title_b: str) -> float:\n    \"\"\"\n    Simple word-overlap similarity for recurring task detection.\n    Returns ratio of common non-trivial words to max title word count.\n    Threshold 0.45 \u2192 treat as recurring.\n    \"\"\"\n    stop = {\"the\", \"a\", \"an\", \"to\", \"for\", \"in\", \"on\", \"with\", \"and\", \"or\",\n            \"of\", \"is\", \"are\", \"was\", \"were\", \"be\", \"been\", \"has\", \"have\",\n            \"new\", \"this\", \"that\", \"from\", \"by\", \"at\", \"it\"}\n    wa = [w for w in title_a.lower().split() if len(w) > 2 and w not in stop]\n    wb = [w for w in title_b.lower().split() if len(w) > 2 and w not in stop]\n    if not wa or not wb:\n        return 0.0\n    set_a = set(wa)\n    common = sum(1 for w in wb if w in set_a)\n    return common / max(len(wa), len(wb))\n\n\ndef run(\n    approved_tasks: list[dict],\n    meeting_title: str,\n    raw_notes: str = \"\",\n    decisions: list[str] | None = None,\n    existing_tasks: list[dict] | None = None,   # injected by runtime from tasks table\n) -> dict:\n    decisions = decisions or []\n    existing_tasks = existing_tasks or []\n    now = datetime.now(timezone.utc).isoformat()\n\n    meeting_id = str(uuid.uuid4())\n\n    # \u2500\u2500 Meeting record \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n    meeting_record = {\n        \"id\": meeting_id,\n        \"title\": meeting_title,\n        \"raw_notes\": raw_notes,\n        \"task_count\": len(approved_tasks),\n        \"decision_count\": len(decisions),\n        \"processed_at\": now,\n    }\n\n    # \u2500\u2500 Recurring task detection \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n    SIMILARITY_THRESHOLD = 0.45\n    task_records = []\n    recurring_updates = []   # existing task IDs to increment recurrence_count on\n\n    for task in approved_tasks:\n        matched_existing = None\n        for et in existing_tasks:\n            if et.get(\"status\") == \"done\":\n                continue\n            if _word_overlap(task.get(\"title\", \"\"), et.get(\"title\", \"\")) >= SIMILARITY_THRESHOLD:\n                matched_existing = et\n                break\n\n        if matched_existing:\n            # Don't create duplicate \u2014 update the existing task\n            new_count = (matched_existing.get(\"recurrence_count\") or 1) + 1\n            update = {\n                \"id\": matched_existing[\"id\"],\n                \"recurrence_count\": new_count,\n                \"is_recurring\": True,\n                \"priority\": \"high\" if new_count >= 3 else matched_existing.get(\"priority\", \"medium\"),\n            }\n            recurring_updates.append(update)\n        else:\n            task_id = str(uuid.uuid4())\n            record = {\n                \"id\": task_id,\n                \"title\": task.get(\"title\", \"\"),\n                \"description\": task.get(\"description\", \"\"),\n                \"owner\": task.get(\"owner\", \"UNASSIGNED\"),\n                \"deadline\": task.get(\"deadline\") if task.get(\"deadline\") not in (\"NO_DEADLINE\", \"\", None) else None,\n                \"status\": \"todo\",\n                \"priority\": task.get(\"priority\", \"medium\"),\n                \"meeting_id\": meeting_id,\n                \"source_meeting_title\": meeting_title,\n                \"created_at\": now,\n                \"followup_sent\": False,\n                # New fields with defaults\n                \"blocked_reason\": None,\n                \"blocked_at\": None,\n                \"escalated\": False,\n                \"recurrence_count\": 1,\n                \"first_seen_meeting_id\": meeting_id,\n                \"is_recurring\": False,\n            }\n            task_records.append(record)\n\n    # \u2500\u2500 Decision records \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n    decision_records = []\n    for text in decisions:\n        decision_records.append({\n            \"id\": str(uuid.uuid4()),\n            \"text\": text,\n            \"meeting_id\": meeting_id,\n            \"meeting_title\": meeting_title,\n            \"created_at\": now,\n        })\n\n    return {\n        \"meeting_id\": meeting_id,\n        \"meeting_record\": meeting_record,\n        \"task_ids\": [r[\"id\"] for r in task_records],\n        \"task_records\": task_records,\n        \"decision_records\": decision_records,\n        \"recurring_updates\": recurring_updates,\n        \"task_count\": len(task_records),\n        \"decision_count\": len(decision_records),\n        \"recurring_count\": len(recurring_updates),\n    }\n"
+      },
+      {
+        "name": "parse_entities",
+        "source": "\"\"\"\nparse_entities.py\n\nResolves relative date phrases in meeting notes to ISO dates,\nidentifies mentioned team members, and detects transcript format.\n\nInput:\n  notes_text (str): Raw meeting notes or transcript\n  team_names (list[str]): Known team member names\n\nOutput:\n  {\n    \"resolved_dates\": dict[str, str],   # phrase -> ISO date\n    \"mentioned_team_members\": list[str],\n    \"has_timestamps\": bool\n  }\n\"\"\"\n\nimport re\nfrom datetime import date, timedelta\n\n\ndef run(notes_text: str, team_names: list[str]) -> dict:\n    today = date.today()\n\n    resolved_dates = _resolve_dates(notes_text, today)\n    mentioned = _find_members(notes_text, team_names)\n    has_timestamps = bool(re.search(r'\\[\\d{2}:\\d{2}:\\d{2}\\]', notes_text))\n\n    return {\n        \"resolved_dates\": resolved_dates,\n        \"mentioned_team_members\": mentioned,\n        \"has_timestamps\": has_timestamps,\n    }\n\n\ndef _resolve_dates(text: str, today: date) -> dict[str, str]:\n    resolved = {}\n\n    # today / tomorrow\n    resolved[\"today\"] = today.isoformat()\n    resolved[\"tomorrow\"] = (today + timedelta(days=1)).isoformat()\n    resolved[\"day after tomorrow\"] = (today + timedelta(days=2)).isoformat()\n\n    # weekday names \u2192 next occurrence (including today)\n    weekday_names = [\"monday\", \"tuesday\", \"wednesday\", \"thursday\", \"friday\", \"saturday\", \"sunday\"]\n    for i, wd in enumerate(weekday_names):\n        days_ahead = (i - today.weekday()) % 7\n        # if today IS that weekday, return today (not +7)\n        resolved[wd] = (today + timedelta(days=days_ahead)).isoformat()\n        resolved[f\"by {wd}\"] = resolved[wd]\n        resolved[f\"next {wd}\"] = (today + timedelta(days=(days_ahead or 7))).isoformat()\n        if days_ahead == 0:\n            resolved[f\"next {wd}\"] = (today + timedelta(days=7)).isoformat()\n\n    # \"this week\" \u2192 coming Friday\n    days_to_friday = (4 - today.weekday()) % 7\n    resolved[\"this week\"] = (today + timedelta(days=days_to_friday or 7)).isoformat()\n    resolved[\"end of week\"] = resolved[\"this week\"]\n\n    # \"next week\" \u2192 Monday of next week\n    days_to_next_monday = (7 - today.weekday()) % 7 or 7\n    next_monday = today + timedelta(days=days_to_next_monday)\n    resolved[\"next week\"] = next_monday.isoformat()\n\n    # \"end of month\"\n    if today.month == 12:\n        eom = date(today.year + 1, 1, 1) - timedelta(days=1)\n    else:\n        eom = date(today.year, today.month + 1, 1) - timedelta(days=1)\n    resolved[\"end of month\"] = eom.isoformat()\n\n    # \"before July 10\" \u2192 July 9 (current or next year)\n    before_matches = re.findall(\n        r'before\\s+(january|february|march|april|may|june|july|august|september|october|november|december)\\s+(\\d{1,2})',\n        text, re.IGNORECASE\n    )\n    month_map = {\n        \"january\": 1, \"february\": 2, \"march\": 3, \"april\": 4,\n        \"may\": 5, \"june\": 6, \"july\": 7, \"august\": 8,\n        \"september\": 9, \"october\": 10, \"november\": 11, \"december\": 12,\n    }\n    for mon_str, day_str in before_matches:\n        m = month_map[mon_str.lower()]\n        d = int(day_str)\n        target = date(today.year, m, d) - timedelta(days=1)\n        if target < today:\n            target = date(today.year + 1, m, d) - timedelta(days=1)\n        key = f\"before {mon_str.capitalize()} {day_str}\"\n        resolved[key] = target.isoformat()\n        resolved[key.lower()] = target.isoformat()\n\n    # explicit \"July 10\" style \u2192 parse inline dates too\n    month_day_matches = re.findall(\n        r'(january|february|march|april|may|june|july|august|september|october|november|december)\\s+(\\d{1,2})(?:st|nd|rd|th)?',\n        text, re.IGNORECASE\n    )\n    for mon_str, day_str in month_day_matches:\n        m = month_map[mon_str.lower()]\n        d = int(day_str)\n        target = date(today.year, m, d)\n        if target < today:\n            target = date(today.year + 1, m, d)\n        key = f\"{mon_str.capitalize()} {day_str}\"\n        resolved[key] = target.isoformat()\n\n    # \"end of August\" style\n    end_of_month_matches = re.findall(\n        r'end\\s+of\\s+(january|february|march|april|may|june|july|august|september|october|november|december)',\n        text, re.IGNORECASE\n    )\n    for mon_str in end_of_month_matches:\n        m = month_map[mon_str.lower()]\n        year = today.year if m >= today.month else today.year + 1\n        if m == 12:\n            eom_target = date(year + 1, 1, 1) - timedelta(days=1)\n        else:\n            eom_target = date(year, m + 1, 1) - timedelta(days=1)\n        key = f\"end of {mon_str.capitalize()}\"\n        resolved[key] = eom_target.isoformat()\n        resolved[key.lower()] = eom_target.isoformat()\n\n    return resolved\n\n\ndef _find_members(text: str, team_names: list[str]) -> list[str]:\n    mentioned = []\n    for name in team_names:\n        if re.search(r'\\b' + re.escape(name) + r'\\b', text, re.IGNORECASE):\n            mentioned.append(name)\n    return mentioned\n"
+      },
+      {
+        "name": "validate_tasks",
+        "source": "\"\"\"\nvalidate_tasks.py\n\nValidates extracted tasks for required fields (owner, deadline).\nSplits into valid (ready to commit) and flagged (needs human attention).\n\nInput:\n  extracted_tasks (list[dict]): Raw task objects from extractor agent\n\nOutput:\n  {\n    \"valid_tasks\": list[dict],\n    \"flagged_tasks\": list[dict],   # each has \"_flags\" key\n    \"total\": int,\n    \"ready_count\": int,\n    \"needs_attention\": int,\n  }\n\"\"\"\n\n\ndef run(extracted_tasks: list[dict]) -> dict:\n    valid_tasks = []\n    flagged_tasks = []\n\n    for task in extracted_tasks:\n        flags = _validate(task)\n        if flags:\n            task_copy = dict(task)\n            task_copy[\"_flags\"] = flags\n            flagged_tasks.append(task_copy)\n        else:\n            valid_tasks.append(task)\n\n    return {\n        \"valid_tasks\": valid_tasks,\n        \"flagged_tasks\": flagged_tasks,\n        \"total\": len(extracted_tasks),\n        \"ready_count\": len(valid_tasks),\n        \"needs_attention\": len(flagged_tasks),\n    }\n\n\ndef _validate(task: dict) -> list[str]:\n    flags = []\n\n    owner = task.get(\"owner\", \"\").strip()\n    if not owner or owner.upper() == \"UNASSIGNED\":\n        flags.append(\"NO_OWNER\")\n\n    deadline = task.get(\"deadline\", \"\").strip()\n    if not deadline or deadline.upper() == \"NO_DEADLINE\":\n        flags.append(\"NO_DEADLINE\")\n\n    return flags\n"
+      }
+    ],
+    "apps": [
+      {
+        "name": "index",
+        "file": "apps/index.html"
+      }
+    ]
   }
 }

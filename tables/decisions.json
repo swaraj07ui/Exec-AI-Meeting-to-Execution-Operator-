@@ -1,0 +1,1 @@
+{"name": "decisions", "primary_key_column": "id", "enable_rls": false, "visibility": "POD", "columns": [{"name": "text", "type": "TEXT"}, {"name": "meeting_id", "type": "TEXT", "required": false}, {"name": "meeting_title", "type": "TEXT", "required": false}]}
