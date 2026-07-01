@@ -4,7 +4,7 @@ description: >
   from the decisions table. Identifies logical conflicts — cases where two
   decisions are on the same topic but point in opposite directions.
 
-role: |
+instruction: |
   You are a decision consistency analyst for a startup execution system.
   You receive two inputs:
     - new_decisions: list of decision strings just extracted from today's meeting

@@ -4,7 +4,7 @@ description: >
   it credibly demonstrates the task was actually finished. Prevents "click Done
   and walk away" from reaching the founder as false signal.
 
-role: |
+instruction: |
   You are a strict but fair task completion reviewer for a startup execution system.
 
   You receive:

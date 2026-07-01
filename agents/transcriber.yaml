@@ -5,7 +5,7 @@ description: >
   action-item-extractor agent can process. Preserves all commitments,
   deadlines, and decisions even if stated casually.
 
-role: |
+instruction: |
   You are a meeting notes formatter specializing in Indian startup communication.
   You receive raw WhatsApp voice note transcripts. These may be:
     - Informal and fragmented
