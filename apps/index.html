@@ -933,9 +933,36 @@ async function mockExtract(notes,key){
   // F3: Detect recurring BEFORE showing modal
   const{recurringFound,uniqueTasks}=detectRecurring(allTasks);
   const newVal=validateTasks(uniqueTasks);
+  
   // F1: Detect contradictions
   const mockDecisions=data.decisions||[];
-  const{contradictions,clean}=detectContradictions(mockDecisions);
+  let contradictions = [], clean = [];
+  try {
+    const ctrl=new AbortController();setTimeout(()=>ctrl.abort(),5000);
+    const apiUrl = window.__LEMMA_CONFIG__ ? window.__LEMMA_CONFIG__.apiUrl : API;
+    const res = await fetch(`${apiUrl}/agents/contradiction-detector/run`, {
+      method: 'POST',
+      signal: ctrl.signal,
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        inputs: {
+          new_decisions: mockDecisions.map(d => d.text || d),
+          existing_decisions: decisions.map(d => ({text: d.text, meeting_title: d.meeting_title, created_at: d.created_at}))
+        }
+      })
+    });
+    if(!res.ok) throw new Error();
+    const result = await res.json();
+    contradictions = result.output.contradictions || [];
+    clean = result.output.clean || [];
+    console.log('[Contradiction Check] Used LIVE API');
+  } catch (e) {
+    console.log('[Contradiction Check] Used MOCK fallback');
+    const detect = detectContradictions(mockDecisions);
+    contradictions = detect.contradictions;
+    clean = detect.clean;
+  }
+  
   stopTimer();stopTokenCounter();
   showReviewModal({...newVal,decisions:mockDecisions,contradictions,recurringFound},data.title,null);
 }
