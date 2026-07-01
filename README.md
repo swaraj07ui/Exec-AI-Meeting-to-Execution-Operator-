@@ -1,7 +1,8 @@
 # ⚡ Exec — Meeting to Action
 
 > **Lemma Hackathon Submission** · Built by Swaraj Keshav Gawde  
-> 🔗 **Live Demo:** [swaraj07ui.github.io/Exec-AI-Meeting-to-Execution-Operator-/apps](https://swaraj07ui.github.io/Exec-AI-Meeting-to-Execution-Operator-/apps/index.html)
+> 🔗 **Live Demo:** [meeting-exec-pod.apps.lemma.work](https://meeting-exec-pod.apps.lemma.work)  
+> 🏷️ **Topics:** `ai-agents`, `hackathon`, `meeting-automation`, `claude`, `lemma`
 
 **Exec** is a Lemma-powered agentic operator that turns raw meeting transcripts into tracked, owned, deadline-bound action items — in under 30 seconds.
 
@@ -57,7 +58,10 @@ Meeting Notes / Voice Note (Hinglish OK)
 | `team_members` | Team roster for AI owner resolution |
 | `decisions` | All decisions across meetings — enables cross-meeting contradiction detection |
 
-### Agents (5)
+### Architecture Summary
+Exec operates as a multi-agent system built on the Lemma SDK. When a meeting ends, the `voice-note-intake` workflow triggers the `voice-note-transcriber` and `hinglish-cleaner` agents to prep the raw audio transcript. The main `process-meeting` workflow then orchestrates the extraction: the `action-item-extractor` pulls out tasks and decisions, the `contradiction-detector` compares new decisions against historical ones, and the `recurring-checker` filters duplicates. In the background, scheduled workflows (`blocker-check` and `deadline-check`) run daily, using the `followup-drafter` to ping owners, while the `completion-verifier` actively guards the Kanban board from false "Done" statuses.
+
+### Agents (7)
 
 | Agent | Model | Purpose |
 |---|---|---|
@@ -66,6 +70,8 @@ Meeting Notes / Voice Note (Hinglish OK)
 | `contradiction-detector` | claude-sonnet-4-6 | Compares new decisions vs. all historical ones for conflicts |
 | `voice-note-transcriber` | claude-sonnet-4-6 | Cleans Hinglish/informal voice notes into structured English |
 | `completion-verifier` | claude-sonnet-4-6 | Reviews task completion notes — prevents false "Done" signals |
+| `hinglish-cleaner` | claude-sonnet-4-6 | API endpoint for translating code-switched Hinglish notes |
+| `recurring-checker` | claude-3-haiku-20240307 | Fast secondary tier LLM check for identical task titles |
 
 ### Workflows (4)
 
@@ -245,6 +251,14 @@ The app seeds demo data automatically on first load. Or press `⌘K` → "Seed D
 - `1` `2` `3` — load transcripts
 - `Space` — extract tasks
 - `⌘K` / `Ctrl+K` — command palette
+
+---
+
+## ⚠️ Known Limitations
+
+1. **Recurring Task Detection:** Uses a fast word-overlap heuristic pre-filter (score >= 0.25) before calling the LLM. If tasks are described using completely different vocabulary (pure semantic synonyms), the pre-filter might miss them to save API costs.
+2. **Mock Mode vs Live Mode:** If the backend API is unreachable, the frontend elegantly degrades to "mock mode" so the UX demo never breaks. However, mock decision-conflict rules and extraction logic are simplified compared to the live Claude-powered backend.
+3. **Voice Cleaning:** The Hinglish voice cleaning quality and accuracy depend entirely on live backend availability; if offline, it degrades to simply displaying the raw transcript.
 
 ---
 
