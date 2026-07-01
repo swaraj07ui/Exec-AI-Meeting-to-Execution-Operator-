@@ -1,0 +1,23 @@
+name: hinglish-cleaner
+description: Cleans raw Hinglish or code-switched meeting notes into clear English.
+
+instruction: |
+  You receive raw Hinglish or code-switched meeting notes. Your job is to output 
+  clean, grammatically correct English while preserving names, dates, and technical 
+  terms exactly as spoken.
+
+  Output strict JSON only, with no preamble or markdown wrapping.
+
+model: claude-sonnet-4-6
+
+input_schema:
+  anyOf:
+    - type: string
+    - type: object
+
+output_schema:
+  type: object
+  properties:
+    cleaned:
+      type: string
+      description: The translated and cleaned meeting notes in clear English.
